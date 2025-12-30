@@ -1,0 +1,25 @@
+# Paisa Buddy – AI Contributor Notes
+
+- Stack: Vite + React 18 + TypeScript + Tailwind + shadcn/ui + Radix; entry at [src/main.tsx](src/main.tsx) mounts [src/App.tsx](src/App.tsx).
+- Providers: [src/App.tsx](src/App.tsx) wraps the app with QueryClientProvider (react-query), TooltipProvider, shadcn Toaster + Sonner, then BrowserRouter.
+- Routing: Routes are defined directly in [src/App.tsx](src/App.tsx) for Landing, Dashboard, Transactions, Goals, Insights, Learn, Chat, Login, Signup, and a catch-all NotFound. Add new routes above the `*` route.
+- Path alias: `@/` maps to `src/` via tsconfig; prefer it for internal imports (e.g., components, hooks, lib/utils).
+- UI system: Prefer shadcn components under [src/components/ui](src/components/ui) (Buttons, Cards, Dialog, etc.). Tailwind theme uses CSS vars defined in [src/index.css](src/index.css) with gradients (`gradient-primary`, `gradient-hero`, `glass-card`, `text-gradient-*`) and font-display set to Plus Jakarta Sans. Tailwind config in [tailwind.config.ts](tailwind.config.ts) extends container sizing, radii, shadows, and animations.
+- Global styling: Colors and shadows come from CSS variables in [src/index.css](src/index.css); dark mode tokens exist though no theme switcher is wired yet. Avoid re-defining colors inline—use `text-foreground`, `bg-card`, `bg-muted`, etc., or the gradient helper classes.
+- Navbar: Shared top nav in [src/components/layout/Navbar.tsx](src/components/layout/Navbar.tsx) uses `navLinks` array and highlights active route via `useLocation`. Reuse or extend this instead of duplicating nav bars; ensure new links respect mobile collapse state.
+- Landing page: Assembled from [HeroSection](src/components/landing/HeroSection.tsx), [FeaturesSection](src/components/landing/FeaturesSection.tsx), [CTASection](src/components/landing/CTASection.tsx), and [Footer](src/components/landing/Footer.tsx). Animations rely on the utility classes defined in index.css.
+- Dashboard page: [src/pages/Dashboard.tsx](src/pages/Dashboard.tsx) is static/demo-only; cards use lucide icons and shadcn Cards; charts are Recharts (AreaChart + PieChart). Keep data shape compatible with current charts when extending.
+- Transactions page: [src/pages/Transactions.tsx](src/pages/Transactions.tsx) filters a static `transactions` array by search + type. If adding persistence, preserve the filter UX (search + filter buttons) and badge color mapping in `typeColors`.
+- Goals page: [src/pages/Goals.tsx](src/pages/Goals.tsx) computes totals/progress from a static `goals` array and uses custom icons per type. Maintain derived calculations (percentage, totals) if changing data sources.
+- Insights page: [src/pages/Insights.tsx](src/pages/Insights.tsx) mixes Recharts (BarChart, LineChart) with static insight cards; `handleRefresh` is a UI-only spinner. Keep tooltip styling consistent with current theme tokens.
+- Learn page: [src/pages/Learn.tsx](src/pages/Learn.tsx) calculates course progress from the `courses` array and shows badges; cards gate actions via `unlocked` and `completed` flags. Preserve progress math when integrating real data.
+- Chat page: [src/pages/Chat.tsx](src/pages/Chat.tsx) simulates AI replies with `setTimeout`; messages live in component state. If swapping in a backend, keep message shape `{id, role, content, timestamp}` and maintain optimistic append for the user message.
+- Auth pages: [src/pages/Login.tsx](src/pages/Login.tsx) and [src/pages/Signup.tsx](src/pages/Signup.tsx) are UI-only; comments note Supabase integration. Forms use lucide icons and gradient backgrounds; keep accessibility (labels, required fields) when wiring real auth.
+- Footer: [src/components/landing/Footer.tsx](src/components/landing/Footer.tsx) lists placeholder routes (about/privacy/etc. not implemented). Add real pages or adjust links to avoid broken navigation.
+- Assets/localization: Brand uses Devanagari text “पैसा Buddy”; footer lists languages (English/हिंदी/मराठी). Preserve Unicode branding when editing headers and footers.
+- Utilities: General helpers live in [src/lib/utils.ts](src/lib/utils.ts) (shadcn `cn` helper). Hooks folder contains `use-mobile` and `use-toast` utilities if you need responsive detection or toasts.
+- Styling tips: Use `variant="hero"` and `variant="glass"` Button styles already present in UI components; avoid inventing new color tokens unless updating theme variables.
+- State/query: React Query client is initialized but unused; prefer React Query for future data fetching to leverage provider already in place.
+- Commands: `npm run dev` (Vite dev), `npm run build` (prod build), `npm run preview` (serve build), `npm run lint` (eslint). No tests are configured.
+- Linting/TS: tsconfig relaxes strictness (`noImplicitAny`, `strictNullChecks` off). Prefer keeping types explicit in new code even though config is lenient.
+- When adding UI: keep layout padding consistent with container utility (2rem) and reuse `glass-card`/`gradient-*` helpers instead of manual CSS.

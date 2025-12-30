@@ -1,11 +1,16 @@
 import { useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import ThemeToggle from "./ThemeToggle";
+import { useAuth } from "@/context/AuthContext";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Menu, X, Wallet, TrendingUp, Target, BarChart3, BookOpen, MessageCircle } from "lucide-react";
 
 const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
+  const { user, logout } = useAuth();
 
   const navLinks = [
     { href: "/dashboard", label: "Dashboard", icon: BarChart3 },
@@ -55,16 +60,36 @@ const Navbar = () => {
 
           {/* Auth Buttons */}
           <div className="hidden md:flex items-center gap-3">
-            <Link to="/login">
-              <Button variant="ghost" size="sm">
-                Login
-              </Button>
-            </Link>
-            <Link to="/signup">
-              <Button variant="hero" size="sm">
-                Get Started
-              </Button>
-            </Link>
+            <ThemeToggle />
+            {user ? (
+              <>
+                <div className="flex items-center gap-2 px-3 py-1 rounded-lg bg-muted text-sm text-foreground">
+                  <Avatar className="h-8 w-8">
+                    <AvatarFallback>{user.name?.[0]?.toUpperCase() || "U"}</AvatarFallback>
+                  </Avatar>
+                  <div className="leading-tight">
+                    <p className="font-medium">{user.name || "User"}</p>
+                    <p className="text-xs text-muted-foreground">{user.email}</p>
+                  </div>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => { logout(); navigate("/"); }}>
+                  Logout
+                </Button>
+              </>
+            ) : (
+              <>
+                <Link to="/login">
+                  <Button variant="ghost" size="sm">
+                    Login
+                  </Button>
+                </Link>
+                <Link to="/signup">
+                  <Button variant="hero" size="sm">
+                    Get Started
+                  </Button>
+                </Link>
+              </>
+            )}
           </div>
 
           {/* Mobile Menu Button */}
@@ -98,17 +123,49 @@ const Navbar = () => {
                   </Link>
                 );
               })}
-              <div className="flex gap-2 mt-4 pt-4 border-t border-border/50">
-                <Link to="/login" className="flex-1">
-                  <Button variant="outline" className="w-full">
-                    Login
-                  </Button>
-                </Link>
-                <Link to="/signup" className="flex-1">
-                  <Button variant="hero" className="w-full">
-                    Get Started
-                  </Button>
-                </Link>
+
+              <div className="mt-4 pt-4 border-t border-border/50 flex flex-col gap-3">
+                {user ? (
+                  <>
+                    <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-muted">
+                      <Avatar className="h-9 w-9">
+                        <AvatarFallback>{user.name?.[0]?.toUpperCase() || "U"}</AvatarFallback>
+                      </Avatar>
+                      <div className="leading-tight">
+                        <p className="font-medium text-foreground">{user.name || "User"}</p>
+                        <p className="text-xs text-muted-foreground">{user.email}</p>
+                      </div>
+                    </div>
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => {
+                        logout();
+                        setIsOpen(false);
+                        navigate("/");
+                      }}
+                    >
+                      Logout
+                    </Button>
+                  </>
+                ) : (
+                  <div className="flex gap-2">
+                    <Link to="/login" className="flex-1" onClick={() => setIsOpen(false)}>
+                      <Button variant="outline" className="w-full">
+                        Login
+                      </Button>
+                    </Link>
+                    <Link to="/signup" className="flex-1" onClick={() => setIsOpen(false)}>
+                      <Button variant="hero" className="w-full">
+                        Get Started
+                      </Button>
+                    </Link>
+                  </div>
+                )}
+              </div>
+
+              <div className="lg:hidden flex items-center gap-2">
+                <ThemeToggle />
               </div>
             </div>
           </div>

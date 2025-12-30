@@ -1,19 +1,34 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Eye, EyeOff, Mail, Lock, ArrowRight } from "lucide-react";
+import { toast } from "@/components/ui/sonner";
+import { useAuth } from "@/context/AuthContext";
 
 const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const navigate = useNavigate();
+  const { login } = useAuth();
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // Auth logic will be implemented with Supabase
-    console.log("Login:", { email, password });
+    if (isSubmitting) return;
+    if (!email || !password) {
+      toast("Please enter your email and password.");
+      return;
+    }
+    setIsSubmitting(true);
+    setTimeout(() => {
+      login({ email, name: email.split("@")[0] || "Guest" });
+      toast.success("Signed in successfully");
+      navigate("/dashboard");
+      setIsSubmitting(false);
+    }, 800);
   };
 
   return (
@@ -97,8 +112,8 @@ const Login = () => {
             </div>
 
             {/* Submit */}
-            <Button type="submit" variant="hero" size="lg" className="w-full">
-              Sign In
+            <Button type="submit" variant="hero" size="lg" className="w-full" disabled={isSubmitting}>
+              {isSubmitting ? "Signing in..." : "Sign In"}
               <ArrowRight className="w-4 h-4" />
             </Button>
           </form>

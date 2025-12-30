@@ -1,9 +1,11 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Eye, EyeOff, Mail, Lock, User, ArrowRight, Briefcase, Coins, GraduationCap } from "lucide-react";
+import { toast } from "@/components/ui/sonner";
+import { useAuth } from "@/context/AuthContext";
 
 const incomeTypes = [
   { id: "fixed", label: "Fixed Salary", icon: Briefcase, description: "Regular monthly income" },
@@ -17,11 +19,24 @@ const Signup = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [incomeType, setIncomeType] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const navigate = useNavigate();
+  const { login } = useAuth();
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // Auth logic will be implemented with Supabase
-    console.log("Signup:", { name, email, password, incomeType });
+    if (isSubmitting) return;
+    if (!name || !email || !password || !incomeType) {
+      toast("Please complete all fields to continue.");
+      return;
+    }
+    setIsSubmitting(true);
+    setTimeout(() => {
+      login({ email, name });
+      toast.success("Account created! You're all set.");
+      navigate("/dashboard");
+      setIsSubmitting(false);
+    }, 900);
   };
 
   return (
@@ -146,8 +161,8 @@ const Signup = () => {
             </div>
 
             {/* Submit */}
-            <Button type="submit" variant="hero" size="lg" className="w-full">
-              Create Account
+            <Button type="submit" variant="hero" size="lg" className="w-full" disabled={isSubmitting}>
+              {isSubmitting ? "Creating..." : "Create Account"}
               <ArrowRight className="w-4 h-4" />
             </Button>
           </form>

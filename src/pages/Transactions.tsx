@@ -1,8 +1,17 @@
-import { useState } from "react";
+import type React from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Navbar from "@/components/layout/Navbar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { 
   Search,
   Filter,
@@ -20,6 +29,8 @@ import {
   Upload,
   Plus
 } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
+import { toast } from "@/components/ui/sonner";
 
 const categoryIcons: { [key: string]: React.ReactNode } = {
   "Food & Dining": <Utensils className="w-5 h-5" />,
@@ -33,7 +44,16 @@ const categoryIcons: { [key: string]: React.ReactNode } = {
   "Other": <MoreHorizontal className="w-5 h-5" />,
 };
 
-const transactions = [
+type Transaction = {
+  id: number;
+  name: string;
+  category: string;
+  amount: number;
+  date: string;
+  type: "Essentials" | "Needs" | "Wants" | "Income";
+};
+
+const demoTransactions: Transaction[] = [
   { id: 1, name: "Swiggy Order", category: "Food & Dining", amount: -485, date: "Dec 30, 2024", type: "Wants" },
   { id: 2, name: "Monthly Salary", category: "Income", amount: 52000, date: "Dec 29, 2024", type: "Income" },
   { id: 3, name: "Electricity Bill", category: "Bills & Utilities", amount: -1850, date: "Dec 28, 2024", type: "Essentials" },
@@ -54,17 +74,232 @@ const typeColors: { [key: string]: string } = {
 };
 
 const Transactions = () => {
+  const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState("All");
+  const [transactionsData, setTransactionsData] = useState<Transaction[]>(user ? [] : demoTransactions);
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [newTransaction, setNewTransaction] = useState({
+    name: "",
+    category: "Other",
+    amount: "",
+    date: "",
+    type: "Essentials" as Transaction["type"],
+  });
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const exportLinkRef = useRef<HTMLAnchorElement | null>(null);
+  const storageKey = user ? `pb-transactions-${user.email}` : "pb-transactions-guest";
+
+  useEffect(() => {
+    if (user) {
+      const saved = localStorage.getItem(storageKey);
+      if (saved) {
+        try {
+          setTransactionsData(JSON.parse(saved));
+        } catch {
+          setTransactionsData([]);
+        }
+      } else {
+        setTransactionsData([]);
+      }
+    } else {
+      setTransactionsData(demoTransactions);
+    }
+    setSearchQuery("");
+    setActiveFilter("All");
+  }, [user, storageKey]);
+
+  useEffect(() => {
+    if (user) {
+      localStorage.setItem(storageKey, JSON.stringify(transactionsData));
+    }
+  }, [transactionsData, storageKey, user]);
 
   const filters = ["All", "Essentials", "Needs", "Wants", "Income"];
 
-  const filteredTransactions = transactions.filter((tx) => {
+  const filteredTransactions = transactionsData.filter((tx) => {
     const matchesSearch = tx.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          tx.category.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesFilter = activeFilter === "All" || tx.type === activeFilter;
     return matchesSearch && matchesFilter;
   });
+
+  const summaryTotals = useMemo(() => {
+    const totals: Record<"Essentials" | "Needs" | "Wants" | "Income", number> = {
+      Essentials: 0,
+      Needs: 0,
+      Wants: 0,
+      Income: 0,
+    };
+    transactionsData.forEach((tx) => {
+      if (totals[tx.type] !== undefined) {
+        totals[tx.type] += Math.abs(tx.amount);
+      }
+    });
+    return totals;
+  }, [transactionsData]);
+
+  const handleImportClick = () => fileInputRef.current?.click();
+
+  const handleClearAll = () => {
+    setTransactionsData([]);
+    localStorage.removeItem(storageKey);
+    toast.success("All transactions deleted");
+  };
+
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const lines = text.trim().split(/\r?\n/).filter(Boolean);
+      if (!lines.length) throw new Error("Empty file");
+
+      const parseLine = (line: string) =>
+        line.match(/("([^"]|"")*"|[^,]+)/g)?.map((cell) =>
+          cell.replace(/^"|"$/g, "").replace(/""/g, "").trim()
+        ) ?? [];
+
+      const headerCells = parseLine(lines[0]);
+      const header = headerCells.map((h) => h.toLowerCase());
+
+      const requiredStandard = ["name", "category", "amount", "date", "type"];
+      const isStandard = requiredStandard.every((key) => header.includes(key));
+
+      const isBankExport = header.includes("particulars") && (header.includes("debit") || header.includes("credit"));
+
+      const dataLines = (isStandard || isBankExport) ? lines.slice(1) : lines;
+
+      const getValue = (cells: string[], key: string, idxFallback: number) => {
+        if (isStandard || isBankExport) {
+          const headerIndex = header.indexOf(key);
+          if (headerIndex >= 0) return cells[headerIndex] ?? "";
+          // Fallback to positional map for bank exports if headers are slightly off
+          if (isBankExport) {
+            const bankPositions: Record<string, number> = {
+              date: 0,
+              particulars: 1,
+              debit: 2,
+              credit: 3,
+              balance: 4,
+            };
+            if (bankPositions[key] !== undefined) return cells[bankPositions[key]] ?? "";
+          }
+        }
+        return cells[idxFallback] ?? "";
+      };
+
+      const normalized: Transaction[] = dataLines.map((line, idx) => {
+        const cells = parseLine(line);
+
+        if (isBankExport) {
+          const particulars = getValue(cells, "particulars", 1);
+          const debitRaw = getValue(cells, "debit", 2);
+          const creditRaw = getValue(cells, "credit", 3);
+          const dateRaw = getValue(cells, "date", 0);
+
+          const parseAmount = (val: string) => {
+            const cleaned = String(val).replace(/[\s,\u00A0]/g, "").replace(/[^0-9.\-]/g, "");
+            const n = Number.parseFloat(cleaned);
+            return Number.isFinite(n) ? n : 0;
+          };
+
+          const debit = parseAmount(debitRaw);
+          const credit = parseAmount(creditRaw);
+
+          let amount = 0;
+          if (debit && !credit) amount = -Math.abs(debit);
+          else if (credit && !debit) amount = Math.abs(credit);
+          else amount = credit - debit;
+
+          return {
+            id: idx + 1,
+            name: particulars || `Transaction ${idx + 1}`,
+            category: particulars || "Other",
+            amount,
+            date: dateRaw || new Date().toISOString().slice(0, 10),
+            type: amount >= 0 ? "Income" : "Essentials",
+          };
+        }
+
+        return {
+          id: idx + 1,
+          name: getValue(cells, "name", 0) || `Transaction ${idx + 1}`,
+          category: getValue(cells, "category", 1) || "Other",
+          amount: Number(getValue(cells, "amount", 2)) || 0,
+          date: getValue(cells, "date", 3) || new Date().toDateString(),
+          type: (getValue(cells, "type", 4) as Transaction["type"]) || "Essentials",
+        };
+      });
+
+      setTransactionsData(normalized);
+      toast.success(`Imported ${normalized.length} transactions from CSV`);
+    } catch (error) {
+      toast.error("Upload a CSV with columns: name, category, amount, date, type or a bank export with Date, Particulars, Debit/Credit.");
+    } finally {
+      event.target.value = "";
+    }
+  };
+
+  const resetTransactionForm = () =>
+    setNewTransaction({ name: "", category: "Other", amount: "", date: "", type: "Essentials" });
+
+  const handleAddTransaction = () => {
+    const amountValue = Number(newTransaction.amount);
+    if (!newTransaction.name || Number.isNaN(amountValue)) {
+      toast.error("Enter a name and valid amount.");
+      return;
+    }
+
+    const next: Transaction = {
+      id: transactionsData.length ? Math.max(...transactionsData.map((t) => t.id)) + 1 : 1,
+      name: newTransaction.name,
+      category: newTransaction.category || "Other",
+      amount: amountValue,
+      date: newTransaction.date || new Date().toDateString(),
+      type: newTransaction.type,
+    };
+    setTransactionsData((prev) => [...prev, next]);
+    toast.success("Transaction added");
+    resetTransactionForm();
+    setAddDialogOpen(false);
+  };
+
+  const handleExport = (format: "json" | "csv") => {
+    if (!transactionsData.length) {
+      toast("No transactions to export.");
+      return;
+    }
+
+    if (format === "json") {
+      const blob = new Blob([JSON.stringify(transactionsData, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = exportLinkRef.current;
+      if (link) {
+        link.href = url;
+        link.download = "transactions.json";
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+      }
+      return;
+    }
+
+    // CSV
+    const header = ["id", "name", "category", "amount", "date", "type"];
+    const rows = transactionsData.map((tx) => [tx.id, tx.name, tx.category, tx.amount, tx.date, tx.type]);
+    const csv = [header, ...rows]
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const link = exportLinkRef.current;
+    if (link) {
+      link.href = url;
+      link.download = "transactions.csv";
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -80,15 +315,22 @@ const Transactions = () => {
               <p className="text-muted-foreground">Track and manage your expenses</p>
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" size="sm">
+              <Button variant="destructive" size="sm" onClick={handleClearAll}>
+                Clear All
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => handleExport("json")}>
                 <Download className="w-4 h-4 mr-2" />
-                Export
+                Export JSON
               </Button>
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" onClick={() => handleExport("csv")}>
+                <Download className="w-4 h-4 mr-2" />
+                Export CSV
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleImportClick}>
                 <Upload className="w-4 h-4 mr-2" />
-                Import
+                Import CSV
               </Button>
-              <Button variant="hero" size="sm">
+              <Button variant="hero" size="sm" onClick={() => setAddDialogOpen(true)}>
                 <Plus className="w-4 h-4 mr-2" />
                 Add
               </Button>
@@ -126,25 +368,25 @@ const Transactions = () => {
             <Card className="border-border/50">
               <CardContent className="p-4">
                 <p className="text-xs text-muted-foreground mb-1">Essentials</p>
-                <p className="text-lg font-bold text-primary">₹19,190</p>
+                <p className="text-lg font-bold text-primary">₹{summaryTotals.Essentials.toLocaleString()}</p>
               </CardContent>
             </Card>
             <Card className="border-border/50">
               <CardContent className="p-4">
                 <p className="text-xs text-muted-foreground mb-1">Needs</p>
-                <p className="text-lg font-bold text-accent">₹2,000</p>
+                <p className="text-lg font-bold text-accent">₹{summaryTotals.Needs.toLocaleString()}</p>
               </CardContent>
             </Card>
             <Card className="border-border/50">
               <CardContent className="p-4">
                 <p className="text-xs text-muted-foreground mb-1">Wants</p>
-                <p className="text-lg font-bold text-warning">₹4,133</p>
+                <p className="text-lg font-bold text-warning">₹{summaryTotals.Wants.toLocaleString()}</p>
               </CardContent>
             </Card>
             <Card className="border-border/50">
               <CardContent className="p-4">
                 <p className="text-xs text-muted-foreground mb-1">Income</p>
-                <p className="text-lg font-bold text-success">₹67,000</p>
+                <p className="text-lg font-bold text-success">₹{summaryTotals.Income.toLocaleString()}</p>
               </CardContent>
             </Card>
           </div>
@@ -196,13 +438,95 @@ const Transactions = () => {
 
               {filteredTransactions.length === 0 && (
                 <div className="text-center py-12">
-                  <p className="text-muted-foreground">No transactions found</p>
+                  <p className="text-muted-foreground mb-2">No transactions yet. Upload a CSV file or add one manually to get started.</p>
+                  <Button variant="outline" size="sm" onClick={handleImportClick}>
+                    <Upload className="w-4 h-4 mr-2" />
+                    Import Transactions
+                  </Button>
                 </div>
               )}
             </CardContent>
           </Card>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={handleFileChange}
+          />
+          <a ref={exportLinkRef} className="hidden" aria-hidden />
         </div>
       </main>
+
+      <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add transaction</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-3">
+            <div className="grid gap-2">
+              <Label htmlFor="tx-name">Name</Label>
+              <Input
+                id="tx-name"
+                value={newTransaction.name}
+                onChange={(e) => setNewTransaction((prev) => ({ ...prev, name: e.target.value }))}
+                placeholder="e.g. Grocery run"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="tx-amount">Amount (use negative for expense)</Label>
+              <Input
+                id="tx-amount"
+                type="number"
+                value={newTransaction.amount}
+                onChange={(e) => setNewTransaction((prev) => ({ ...prev, amount: e.target.value }))}
+                placeholder="-1200"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="tx-category">Category</Label>
+              <Input
+                id="tx-category"
+                value={newTransaction.category}
+                onChange={(e) => setNewTransaction((prev) => ({ ...prev, category: e.target.value }))}
+                placeholder="Food & Dining"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="tx-date">Date</Label>
+              <Input
+                id="tx-date"
+                type="date"
+                value={newTransaction.date}
+                onChange={(e) => setNewTransaction((prev) => ({ ...prev, date: e.target.value }))}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="tx-type">Type</Label>
+              <select
+                id="tx-type"
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm text-foreground"
+                value={newTransaction.type}
+                onChange={(e) =>
+                  setNewTransaction((prev) => ({ ...prev, type: e.target.value as Transaction["type"] }))
+                }
+              >
+                <option value="Essentials">Essentials</option>
+                <option value="Needs">Needs</option>
+                <option value="Wants">Wants</option>
+                <option value="Income">Income</option>
+              </select>
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => { resetTransactionForm(); setAddDialogOpen(false); }}>
+              Cancel
+            </Button>
+            <Button onClick={handleAddTransaction}>Save</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

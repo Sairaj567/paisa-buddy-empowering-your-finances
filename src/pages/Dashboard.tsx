@@ -1,81 +1,135 @@
+import { useEffect, useMemo, useState } from "react";
 import Navbar from "@/components/layout/Navbar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { 
-  Wallet, 
-  TrendingUp, 
-  TrendingDown, 
-  Target, 
-  ArrowUpRight, 
+import { useAuth } from "@/context/AuthContext";
+import { Link } from "react-router-dom";
+import {
   ArrowDownRight,
+  ArrowUpRight,
+  CreditCard,
+  PiggyBank,
   Plus,
   Sparkles,
-  PiggyBank,
-  CreditCard
+  TrendingDown,
+  TrendingUp,
+  Wallet,
 } from "lucide-react";
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
-
-const spendingData = [
-  { name: "Jan", income: 45000, expense: 32000 },
-  { name: "Feb", income: 48000, expense: 35000 },
-  { name: "Mar", income: 42000, expense: 28000 },
-  { name: "Apr", income: 55000, expense: 38000 },
-  { name: "May", income: 50000, expense: 30000 },
-  { name: "Jun", income: 52000, expense: 34000 },
-];
-
-const categoryData = [
-  { name: "Essentials", value: 12000, color: "hsl(174, 62%, 35%)" },
-  { name: "Needs", value: 8500, color: "hsl(35, 95%, 55%)" },
-  { name: "Wants", value: 5500, color: "hsl(152, 60%, 45%)" },
-  { name: "Savings", value: 8000, color: "hsl(200, 25%, 60%)" },
-];
-
-const recentTransactions = [
-  { id: 1, name: "Grocery Store", category: "Essentials", amount: -2450, date: "Today" },
-  { id: 2, name: "Salary Credit", category: "Income", amount: 52000, date: "Yesterday" },
-  { id: 3, name: "Netflix", category: "Wants", amount: -649, date: "Dec 28" },
-  { id: 4, name: "Electricity Bill", category: "Essentials", amount: -1850, date: "Dec 27" },
-  { id: 5, name: "Restaurant", category: "Wants", amount: -1200, date: "Dec 26" },
-];
-
-const goals = [
-  { name: "Emergency Fund", current: 72000, target: 100000, color: "bg-primary" },
-  { name: "Vacation", current: 25000, target: 50000, color: "bg-accent" },
-  { name: "New Laptop", current: 35000, target: 80000, color: "bg-success" },
-];
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+  Cell,
+} from "recharts";
 
 const Dashboard = () => {
+  const { user } = useAuth();
+  const [transactions, setTransactions] = useState<Array<{ id: number; name: string; category: string; date: string; amount: number; type?: string }>>([]);
+  const [goals, setGoals] = useState<Array<{ name: string; current: number; target: number; color: string }>>([]);
+
+  const transactionsKey = user ? `pb-transactions-${user.email}` : "pb-transactions-guest";
+  const goalsKey = user ? `pb-goals-${user.email}` : "pb-goals-guest";
+
+  useEffect(() => {
+    const raw = localStorage.getItem(transactionsKey);
+    if (raw) {
+      try {
+        setTransactions(JSON.parse(raw));
+      } catch {
+        setTransactions([]);
+      }
+    } else {
+      setTransactions([]);
+    }
+
+    const rawGoals = localStorage.getItem(goalsKey);
+    if (rawGoals) {
+      try {
+        setGoals(JSON.parse(rawGoals));
+      } catch {
+        setGoals([]);
+      }
+    } else {
+      setGoals([]);
+    }
+  }, [transactionsKey, goalsKey]);
+
+  const totals = useMemo(() => {
+    const income = transactions.filter((t) => t.amount > 0).reduce((sum, t) => sum + t.amount, 0);
+    const expenses = transactions.filter((t) => t.amount < 0).reduce((sum, t) => sum + Math.abs(t.amount), 0);
+    const balance = income - expenses;
+    const savingsRate = income > 0 ? Math.max(0, Math.round(((income - expenses) / income) * 100)) : 0;
+    return { income, expenses, balance, savingsRate };
+  }, [transactions]);
+
+  const parseDate = (value: string) => {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return new Date();
+    return d;
+  };
+
+  const recentTransactions = useMemo(() => {
+    return [...transactions]
+      .sort((a, b) => parseDate(b.date).getTime() - parseDate(a.date).getTime())
+      .slice(0, 5);
+  }, [transactions]);
+
+  const spendingData = useMemo(() => {
+    const grouped: Record<string, { name: string; income: number; expense: number }> = {};
+    transactions.forEach((tx) => {
+      const dateKey = parseDate(tx.date).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+      if (!grouped[dateKey]) grouped[dateKey] = { name: dateKey, income: 0, expense: 0 };
+      if (tx.amount > 0) grouped[dateKey].income += tx.amount;
+      if (tx.amount < 0) grouped[dateKey].expense += Math.abs(tx.amount);
+    });
+    return Object.values(grouped).sort((a, b) => parseDate(b.name).getTime() - parseDate(a.name).getTime()).slice(0, 8).reverse();
+  }, [transactions]);
+
+  const categoryData = useMemo(() => {
+    const colors = ["#7c3aed", "#22c55e", "#06b6d4", "#f97316", "#ef4444", "#a855f7", "#0ea5e9", "#f59e0b"];
+    const grouped: Record<string, number> = {};
+    transactions.forEach((tx) => {
+      if (tx.amount < 0) {
+        grouped[tx.category || "Other"] = (grouped[tx.category || "Other"] || 0) + Math.abs(tx.amount);
+      }
+    });
+    return Object.entries(grouped).map(([name, value], idx) => ({ name, value, color: colors[idx % colors.length] }));
+  }, [transactions]);
+
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
       <main className="pt-20 pb-12 px-4">
-        <div className="container mx-auto">
-          {/* Header */}
+        <div className="container mx-auto max-w-6xl">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
             <div>
-              <h1 className="text-2xl md:text-3xl font-display font-bold text-foreground">
-                Welcome back! 👋
-              </h1>
+              <h1 className="text-2xl md:text-3xl font-display font-bold text-foreground">Dashboard</h1>
               <p className="text-muted-foreground">Here's your financial overview</p>
             </div>
-            <Button variant="hero">
-              <Plus className="w-4 h-4" />
-              Add Transaction
+            <Button variant="hero" asChild>
+              <Link to="/transactions" className="inline-flex items-center gap-2">
+                <Plus className="w-4 h-4" />
+                Add Transaction
+              </Link>
             </Button>
           </div>
 
-          {/* Stats Grid */}
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
             <Card className="border-border/50">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-muted-foreground">Total Balance</p>
-                    <p className="text-2xl font-bold text-foreground">₹1,24,500</p>
+                    <p className="text-2xl font-bold text-foreground">₹{totals.balance.toLocaleString()}</p>
                     <div className="flex items-center gap-1 mt-1">
-                      <ArrowUpRight className="w-3 h-3 text-success" />
-                      <span className="text-xs text-success font-medium">+12.5%</span>
+                      <ArrowUpRight className="w-3 h-3 text-muted-foreground" />
+                      <span className="text-xs text-muted-foreground">Awaiting data</span>
                     </div>
                   </div>
                   <div className="w-12 h-12 rounded-2xl gradient-primary flex items-center justify-center">
@@ -90,10 +144,10 @@ const Dashboard = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-muted-foreground">Monthly Income</p>
-                    <p className="text-2xl font-bold text-success">+₹52,000</p>
+                    <p className="text-2xl font-bold text-success">₹{totals.income.toLocaleString()}</p>
                     <div className="flex items-center gap-1 mt-1">
-                      <ArrowUpRight className="w-3 h-3 text-success" />
-                      <span className="text-xs text-success font-medium">+8.2%</span>
+                      <ArrowUpRight className="w-3 h-3 text-muted-foreground" />
+                      <span className="text-xs text-muted-foreground">Awaiting data</span>
                     </div>
                   </div>
                   <div className="w-12 h-12 rounded-2xl bg-success/10 flex items-center justify-center">
@@ -108,10 +162,10 @@ const Dashboard = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-muted-foreground">Monthly Expenses</p>
-                    <p className="text-2xl font-bold text-destructive">-₹34,000</p>
+                    <p className="text-2xl font-bold text-destructive">₹{totals.expenses.toLocaleString()}</p>
                     <div className="flex items-center gap-1 mt-1">
-                      <ArrowDownRight className="w-3 h-3 text-success" />
-                      <span className="text-xs text-success font-medium">-5.3%</span>
+                      <ArrowDownRight className="w-3 h-3 text-muted-foreground" />
+                      <span className="text-xs text-muted-foreground">Awaiting data</span>
                     </div>
                   </div>
                   <div className="w-12 h-12 rounded-2xl bg-destructive/10 flex items-center justify-center">
@@ -126,10 +180,10 @@ const Dashboard = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-muted-foreground">Savings Rate</p>
-                    <p className="text-2xl font-bold text-foreground">34.6%</p>
+                    <p className="text-2xl font-bold text-foreground">{totals.savingsRate}%</p>
                     <div className="flex items-center gap-1 mt-1">
-                      <ArrowUpRight className="w-3 h-3 text-success" />
-                      <span className="text-xs text-success font-medium">+2.1%</span>
+                      <ArrowUpRight className="w-3 h-3 text-muted-foreground" />
+                      <span className="text-xs text-muted-foreground">Awaiting data</span>
                     </div>
                   </div>
                   <div className="w-12 h-12 rounded-2xl bg-accent/10 flex items-center justify-center">
@@ -140,173 +194,201 @@ const Dashboard = () => {
             </Card>
           </div>
 
-          {/* Charts Row */}
           <div className="grid lg:grid-cols-3 gap-6 mb-8">
-            {/* Spending Trend */}
             <Card className="lg:col-span-2 border-border/50">
               <CardHeader>
                 <CardTitle className="text-lg font-semibold">Income vs Expenses</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="h-[300px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={spendingData}>
-                      <defs>
-                        <linearGradient id="incomeGradient" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="hsl(152, 60%, 45%)" stopOpacity={0.3}/>
-                          <stop offset="95%" stopColor="hsl(152, 60%, 45%)" stopOpacity={0}/>
-                        </linearGradient>
-                        <linearGradient id="expenseGradient" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="hsl(0, 72%, 51%)" stopOpacity={0.3}/>
-                          <stop offset="95%" stopColor="hsl(0, 72%, 51%)" stopOpacity={0}/>
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                      <XAxis dataKey="name" stroke="hsl(var(--muted-foreground))" fontSize={12} />
-                      <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} tickFormatter={(v) => `₹${v/1000}k`} />
-                      <Tooltip 
-                        contentStyle={{ 
-                          backgroundColor: 'hsl(var(--card))', 
-                          border: '1px solid hsl(var(--border))',
-                          borderRadius: '8px'
-                        }}
-                        formatter={(value: number) => [`₹${value.toLocaleString()}`, '']}
-                      />
-                      <Area type="monotone" dataKey="income" stroke="hsl(152, 60%, 45%)" fill="url(#incomeGradient)" strokeWidth={2} name="Income" />
-                      <Area type="monotone" dataKey="expense" stroke="hsl(0, 72%, 51%)" fill="url(#expenseGradient)" strokeWidth={2} name="Expense" />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
+                {spendingData.length === 0 ? (
+                  <div className="h-[300px] flex flex-col items-center justify-center text-center text-muted-foreground gap-2">
+                    <p>No income/expense data yet.</p>
+                    <Link to="/transactions" className="text-primary font-medium">Add transactions to see this chart</Link>
+                  </div>
+                ) : (
+                  <div className="h-[300px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={spendingData}>
+                        <defs>
+                          <linearGradient id="incomeGradient" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="hsl(152, 60%, 45%)" stopOpacity={0.3} />
+                            <stop offset="95%" stopColor="hsl(152, 60%, 45%)" stopOpacity={0} />
+                          </linearGradient>
+                          <linearGradient id="expenseGradient" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="hsl(0, 72%, 51%)" stopOpacity={0.3} />
+                            <stop offset="95%" stopColor="hsl(0, 72%, 51%)" stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                        <XAxis dataKey="name" stroke="hsl(var(--muted-foreground))" fontSize={12} />
+                        <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} tickFormatter={(v) => `₹${v / 1000}k`} />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: "hsl(var(--card))",
+                            border: "1px solid hsl(var(--border))",
+                            borderRadius: "8px",
+                          }}
+                          formatter={(value: number) => [`₹${value.toLocaleString()}`, ""]}
+                        />
+                        <Area type="monotone" dataKey="income" stroke="hsl(152, 60%, 45%)" fill="url(#incomeGradient)" strokeWidth={2} name="Income" />
+                        <Area type="monotone" dataKey="expense" stroke="hsl(0, 72%, 51%)" fill="url(#expenseGradient)" strokeWidth={2} name="Expense" />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
-            {/* Category Breakdown */}
             <Card className="border-border/50">
               <CardHeader>
                 <CardTitle className="text-lg font-semibold">Spending by Category</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="h-[200px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={categoryData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={50}
-                        outerRadius={80}
-                        paddingAngle={2}
-                        dataKey="value"
-                      >
-                        {categoryData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip 
-                        contentStyle={{ 
-                          backgroundColor: 'hsl(var(--card))', 
-                          border: '1px solid hsl(var(--border))',
-                          borderRadius: '8px'
-                        }}
-                        formatter={(value: number) => [`₹${value.toLocaleString()}`, '']}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="grid grid-cols-2 gap-2 mt-4">
-                  {categoryData.map((cat) => (
-                    <div key={cat.name} className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: cat.color }} />
-                      <span className="text-xs text-muted-foreground">{cat.name}</span>
+                {categoryData.length === 0 ? (
+                  <div className="h-[200px] flex items-center justify-center text-muted-foreground text-sm text-center">
+                    Add categorized transactions to see a breakdown.
+                  </div>
+                ) : (
+                  <>
+                    <div className="h-[200px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={categoryData}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={50}
+                            outerRadius={80}
+                            paddingAngle={2}
+                            dataKey="value"
+                          >
+                            {categoryData.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip
+                            contentStyle={{
+                              backgroundColor: "hsl(var(--card))",
+                              border: "1px solid hsl(var(--border))",
+                              borderRadius: "8px",
+                            }}
+                            formatter={(value: number) => [`₹${value.toLocaleString()}`, ""]}
+                          />
+                        </PieChart>
+                      </ResponsiveContainer>
                     </div>
-                  ))}
-                </div>
+                    <div className="grid grid-cols-2 gap-2 mt-4">
+                      {categoryData.map((cat) => (
+                        <div key={cat.name} className="flex items-center gap-2">
+                          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: cat.color }} />
+                          <span className="text-xs text-muted-foreground">{cat.name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
               </CardContent>
             </Card>
           </div>
 
-          {/* Bottom Row */}
           <div className="grid lg:grid-cols-3 gap-6">
-            {/* Recent Transactions */}
             <Card className="lg:col-span-2 border-border/50">
               <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle className="text-lg font-semibold">Recent Transactions</CardTitle>
-                <Button variant="ghost" size="sm">View All</Button>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {recentTransactions.map((tx) => (
-                    <div key={tx.id} className="flex items-center justify-between py-2">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                          tx.amount > 0 ? 'bg-success/10' : 'bg-muted'
-                        }`}>
-                          {tx.amount > 0 ? (
-                            <TrendingUp className="w-5 h-5 text-success" />
-                          ) : (
-                            <TrendingDown className="w-5 h-5 text-muted-foreground" />
-                          )}
-                        </div>
-                        <div>
-                          <p className="font-medium text-foreground">{tx.name}</p>
-                          <p className="text-xs text-muted-foreground">{tx.category} • {tx.date}</p>
-                        </div>
-                      </div>
-                      <p className={`font-semibold ${tx.amount > 0 ? 'text-success' : 'text-foreground'}`}>
-                        {tx.amount > 0 ? '+' : ''}₹{Math.abs(tx.amount).toLocaleString()}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Goals */}
-            <Card className="border-border/50">
-              <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle className="text-lg font-semibold">Savings Goals</CardTitle>
-                <Button variant="ghost" size="sm">
-                  <Plus className="w-4 h-4" />
+                <Button variant="ghost" size="sm" asChild>
+                  <Link to="/transactions">View All</Link>
                 </Button>
               </CardHeader>
               <CardContent>
-                <div className="space-y-6">
-                  {goals.map((goal) => {
-                    const percentage = Math.round((goal.current / goal.target) * 100);
-                    return (
-                      <div key={goal.name}>
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm font-medium text-foreground">{goal.name}</span>
-                          <span className="text-xs text-muted-foreground">{percentage}%</span>
+                {recentTransactions.length === 0 ? (
+                  <div className="text-center py-12 space-y-3">
+                    <p className="text-muted-foreground">No transactions found.</p>
+                    <Link to="/transactions" className="text-primary font-medium">Add transactions to populate this list</Link>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {recentTransactions.map((tx) => (
+                      <div key={tx.id} className="flex items-center justify-between py-2">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                            tx.amount > 0 ? "bg-success/10" : "bg-muted"
+                          }`}>
+                            {tx.amount > 0 ? (
+                              <TrendingUp className="w-5 h-5 text-success" />
+                            ) : (
+                              <TrendingDown className="w-5 h-5 text-muted-foreground" />
+                            )}
+                          </div>
+                          <div>
+                            <p className="font-medium text-foreground">{tx.name}</p>
+                            <p className="text-xs text-muted-foreground">{tx.category} • {tx.date}</p>
+                          </div>
                         </div>
-                        <div className="h-2 bg-muted rounded-full overflow-hidden">
-                          <div 
-                            className={`h-full rounded-full ${goal.color} transition-all duration-500`}
-                            style={{ width: `${percentage}%` }}
-                          />
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          ₹{goal.current.toLocaleString()} / ₹{goal.target.toLocaleString()}
+                        <p className={`font-semibold ${tx.amount > 0 ? "text-success" : "text-foreground"}`}>
+                          {tx.amount > 0 ? "+" : ""}₹{Math.abs(tx.amount).toLocaleString()}
                         </p>
                       </div>
-                    );
-                  })}
-                </div>
-
-                {/* AI Insight */}
-                <div className="mt-6 p-4 bg-primary/5 border border-primary/20 rounded-xl">
-                  <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 rounded-lg gradient-primary flex items-center justify-center flex-shrink-0">
-                      <Sparkles className="w-4 h-4 text-primary-foreground" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-foreground">AI Tip</p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Increase SIP by ₹2000 to reach your Emergency Fund goal 2 months earlier! 🎯
-                      </p>
-                    </div>
+                    ))}
                   </div>
-                </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/50">
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle className="text-lg font-semibold">Savings Goals</CardTitle>
+                <Button variant="ghost" size="sm" asChild>
+                  <Link to="/goals">
+                    <Plus className="w-4 h-4" />
+                  </Link>
+                </Button>
+              </CardHeader>
+              <CardContent>
+                {goals.length === 0 ? (
+                  <div className="space-y-3 text-center text-muted-foreground">
+                    <p>No goals yet.</p>
+                    <Link to="/goals" className="text-primary font-medium">Create a goal to track progress</Link>
+                  </div>
+                ) : (
+                  <>
+                    <div className="space-y-6">
+                      {goals.map((goal) => {
+                        const percentage = goal.target > 0 ? Math.round((goal.current / goal.target) * 100) : 0;
+                        return (
+                          <div key={goal.name}>
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-sm font-medium text-foreground">{goal.name}</span>
+                              <span className="text-xs text-muted-foreground">{percentage}%</span>
+                            </div>
+                            <div className="h-2 bg-muted rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full ${goal.color} transition-all duration-500`}
+                                style={{ width: `${percentage}%` }}
+                              />
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              ₹{goal.current.toLocaleString()} / ₹{goal.target.toLocaleString()}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="mt-6 p-4 bg-primary/5 border border-primary/20 rounded-xl">
+                      <div className="flex items-start gap-3">
+                        <div className="w-8 h-8 rounded-lg gradient-primary flex items-center justify-center flex-shrink-0">
+                          <Sparkles className="w-4 h-4 text-primary-foreground" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-foreground">AI Tip</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Increase SIP by ₹2000 to reach your Emergency Fund goal faster.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
               </CardContent>
             </Card>
           </div>
