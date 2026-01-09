@@ -75,6 +75,7 @@ const Transactions = () => {
   
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState("All");
+  const [categoryFilter, setCategoryFilter] = useState("All");
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [newTransaction, setNewTransaction] = useState({
@@ -89,11 +90,18 @@ const Transactions = () => {
 
   const filters = ["All", "Essentials", "Needs", "Wants", "Income"];
 
+  // Get unique categories from transactions
+  const categories = useMemo(() => {
+    const uniqueCategories = new Set(transactionsData.map(tx => tx.category || "Other"));
+    return ["All", ...Array.from(uniqueCategories).sort()];
+  }, [transactionsData]);
+
   const filteredTransactions = transactionsData.filter((tx) => {
     const matchesSearch = tx.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          tx.category.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesFilter = activeFilter === "All" || tx.type === activeFilter;
-    return matchesSearch && matchesFilter;
+    const matchesCategory = categoryFilter === "All" || tx.category === categoryFilter;
+    return matchesSearch && matchesFilter && matchesCategory;
   });
 
   const handleImportClick = () => fileInputRef.current?.click();
@@ -514,6 +522,37 @@ const Transactions = () => {
             </div>
           </div>
 
+          {/* Category Filter */}
+          <div className="flex flex-wrap items-center gap-2 mb-6">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Filter className="w-4 h-4" />
+              <span>Category:</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {categories.map((category) => (
+                <button
+                  key={category}
+                  onClick={() => setCategoryFilter(category)}
+                  className={`px-3 py-1.5 text-sm rounded-full transition-all ${
+                    categoryFilter === category
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  }`}
+                >
+                  {category}
+                </button>
+              ))}
+              {categoryFilter !== "All" && (
+                <button
+                  onClick={() => setCategoryFilter("All")}
+                  className="px-3 py-1.5 text-sm rounded-full bg-destructive/10 text-destructive hover:bg-destructive/20 transition-all"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+
           {/* Summary Cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
             <Card className="border-border/50">
@@ -544,9 +583,18 @@ const Transactions = () => {
 
           {/* Transactions List */}
           <Card className="border-border/50">
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-lg font-semibold">
-                {activeFilter === "All" ? "All Transactions" : `${activeFilter} Transactions`}
+                {activeFilter === "All" && categoryFilter === "All" 
+                  ? "All Transactions" 
+                  : categoryFilter !== "All" && activeFilter !== "All"
+                    ? `${activeFilter} • ${categoryFilter}`
+                    : categoryFilter !== "All"
+                      ? categoryFilter
+                      : `${activeFilter} Transactions`}
+                <span className="ml-2 text-sm font-normal text-muted-foreground">
+                  ({filteredTransactions.length})
+                </span>
               </CardTitle>
             </CardHeader>
             <CardContent>

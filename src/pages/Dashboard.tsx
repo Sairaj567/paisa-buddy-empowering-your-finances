@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Navbar from "@/components/layout/Navbar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -37,6 +37,38 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 
+type DateRange = "1W" | "1M" | "3M" | "6M" | "1Y" | "5Y" | "ALL";
+
+const dateRangeOptions: { value: DateRange; label: string }[] = [
+  { value: "1W", label: "1W" },
+  { value: "1M", label: "1M" },
+  { value: "3M", label: "3M" },
+  { value: "6M", label: "6M" },
+  { value: "1Y", label: "1Y" },
+  { value: "5Y", label: "5Y" },
+  { value: "ALL", label: "All" },
+];
+
+const getDateRangeStart = (range: DateRange): Date | null => {
+  const now = new Date();
+  switch (range) {
+    case "1W":
+      return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    case "1M":
+      return new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+    case "3M":
+      return new Date(now.getFullYear(), now.getMonth() - 3, now.getDate());
+    case "6M":
+      return new Date(now.getFullYear(), now.getMonth() - 6, now.getDate());
+    case "1Y":
+      return new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+    case "5Y":
+      return new Date(now.getFullYear() - 5, now.getMonth(), now.getDate());
+    case "ALL":
+      return null;
+  }
+};
+
 const Dashboard = () => {
   const { transactions, isLoading: transactionsLoading, totals } = useTransactions();
   const { goals, isLoading: goalsLoading } = useGoals();
@@ -44,6 +76,7 @@ const Dashboard = () => {
   const { patterns, monthlyRecurringTotal, upcomingThisWeek } = useRecurringTransactions(transactions);
   const { exceededBudgets, warningBudgets } = useBudgetAlerts(budgets);
   
+  const [dateRange, setDateRange] = useState<DateRange>("1M");
   const isLoading = transactionsLoading || goalsLoading;
 
   const parseDate = (value: string) => {
@@ -52,33 +85,60 @@ const Dashboard = () => {
     return d;
   };
 
+  // Filter transactions by date range
+  const filteredTransactions = useMemo(() => {
+    const rangeStart = getDateRangeStart(dateRange);
+    if (!rangeStart) return transactions;
+    return transactions.filter((tx) => parseDate(tx.date) >= rangeStart);
+  }, [transactions, dateRange]);
+
+  // Calculate totals for filtered period
+  const filteredTotals = useMemo(() => {
+    const income = filteredTransactions.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0);
+    const expenses = filteredTransactions.filter((t) => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0);
+    const balance = income - expenses;
+    const savingsRate = income > 0 ? Math.round(((income - expenses) / income) * 100) : 0;
+    return { income, expenses, balance, savingsRate };
+  }, [filteredTransactions]);
+
   const recentTransactions = useMemo(() => {
-    return [...transactions]
+    return [...filteredTransactions]
       .sort((a, b) => parseDate(b.date).getTime() - parseDate(a.date).getTime())
       .slice(0, 5);
-  }, [transactions]);
+  }, [filteredTransactions]);
 
   const spendingData = useMemo(() => {
-    const grouped: Record<string, { name: string; income: number; expense: number }> = {};
-    transactions.forEach((tx) => {
-      const dateKey = parseDate(tx.date).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-      if (!grouped[dateKey]) grouped[dateKey] = { name: dateKey, income: 0, expense: 0 };
+    const grouped: Record<string, { name: string; rawDate: Date; income: number; expense: number }> = {};
+    filteredTransactions.forEach((tx) => {
+      const txDate = parseDate(tx.date);
+      // Use different grouping based on date range
+      let dateKey: string;
+      if (dateRange === "1W") {
+        dateKey = txDate.toLocaleDateString(undefined, { weekday: "short", day: "numeric" });
+      } else if (dateRange === "1M" || dateRange === "3M") {
+        dateKey = txDate.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+      } else {
+        dateKey = txDate.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
+      }
+      if (!grouped[dateKey]) grouped[dateKey] = { name: dateKey, rawDate: txDate, income: 0, expense: 0 };
       if (tx.amount > 0) grouped[dateKey].income += tx.amount;
       if (tx.amount < 0) grouped[dateKey].expense += Math.abs(tx.amount);
     });
-    return Object.values(grouped).sort((a, b) => parseDate(b.name).getTime() - parseDate(a.name).getTime()).slice(0, 8).reverse();
-  }, [transactions]);
+    return Object.values(grouped)
+      .sort((a, b) => a.rawDate.getTime() - b.rawDate.getTime())
+      .map(({ name, income, expense }) => ({ name, income, expense }));
+  }, [filteredTransactions, dateRange]);
 
   const categoryData = useMemo(() => {
     const colors = ["#7c3aed", "#22c55e", "#06b6d4", "#f97316", "#ef4444", "#a855f7", "#0ea5e9", "#f59e0b"];
     const grouped: Record<string, number> = {};
-    transactions.forEach((tx) => {
+    filteredTransactions.forEach((tx) => {
       if (tx.amount < 0) {
         grouped[tx.category || "Other"] = (grouped[tx.category || "Other"] || 0) + Math.abs(tx.amount);
       }
     });
     return Object.entries(grouped).map(([name, value], idx) => ({ name, value, color: colors[idx % colors.length] }));
-  }, [transactions]);
+  }, [filteredTransactions]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -90,12 +150,30 @@ const Dashboard = () => {
               <h1 className="text-2xl md:text-3xl font-display font-bold text-foreground">Dashboard</h1>
               <p className="text-muted-foreground">Here's your financial overview</p>
             </div>
-            <Button variant="hero" asChild>
-              <Link to="/transactions" className="inline-flex items-center gap-2">
-                <Plus className="w-4 h-4" />
-                Add Transaction
-              </Link>
-            </Button>
+            <div className="flex items-center gap-3">
+              {/* Date Range Selector */}
+              <div className="flex items-center bg-muted/50 rounded-lg p-1">
+                {dateRangeOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    onClick={() => setDateRange(option.value)}
+                    className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all ${
+                      dateRange === option.value
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+              <Button variant="hero" asChild>
+                <Link to="/transactions" className="inline-flex items-center gap-2">
+                  <Plus className="w-4 h-4" />
+                  Add Transaction
+                </Link>
+              </Button>
+            </div>
           </div>
 
           {/* Budget Alerts Banner */}
@@ -159,11 +237,12 @@ const Dashboard = () => {
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-muted-foreground">Total Balance</p>
-                    <p className="text-2xl font-bold text-foreground">₹{totals.balance.toLocaleString()}</p>
+                    <p className="text-sm text-muted-foreground">Net Balance</p>
+                    <p className={`text-2xl font-bold ${filteredTotals.balance >= 0 ? 'text-success' : 'text-destructive'}`}>
+                      ₹{filteredTotals.balance.toLocaleString()}
+                    </p>
                     <div className="flex items-center gap-1 mt-1">
-                      <ArrowUpRight className="w-3 h-3 text-muted-foreground" />
-                      <span className="text-xs text-muted-foreground">Awaiting data</span>
+                      <span className="text-xs text-muted-foreground">{dateRange === "ALL" ? "All time" : `Last ${dateRange.replace("1", "1 ").replace("M", "month").replace("W", "week").replace("Y", "year")}`}</span>
                     </div>
                   </div>
                   <div className="w-12 h-12 rounded-2xl gradient-primary flex items-center justify-center">
@@ -177,11 +256,11 @@ const Dashboard = () => {
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-muted-foreground">Monthly Income</p>
-                    <p className="text-2xl font-bold text-success">₹{totals.income.toLocaleString()}</p>
+                    <p className="text-sm text-muted-foreground">Income</p>
+                    <p className="text-2xl font-bold text-success">₹{filteredTotals.income.toLocaleString()}</p>
                     <div className="flex items-center gap-1 mt-1">
-                      <ArrowUpRight className="w-3 h-3 text-muted-foreground" />
-                      <span className="text-xs text-muted-foreground">Awaiting data</span>
+                      <ArrowUpRight className="w-3 h-3 text-success" />
+                      <span className="text-xs text-muted-foreground">{filteredTransactions.filter(t => t.amount > 0).length} transactions</span>
                     </div>
                   </div>
                   <div className="w-12 h-12 rounded-2xl bg-success/10 flex items-center justify-center">
@@ -195,11 +274,11 @@ const Dashboard = () => {
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-muted-foreground">Monthly Expenses</p>
-                    <p className="text-2xl font-bold text-destructive">₹{totals.expenses.toLocaleString()}</p>
+                    <p className="text-sm text-muted-foreground">Expenses</p>
+                    <p className="text-2xl font-bold text-destructive">₹{filteredTotals.expenses.toLocaleString()}</p>
                     <div className="flex items-center gap-1 mt-1">
-                      <ArrowDownRight className="w-3 h-3 text-muted-foreground" />
-                      <span className="text-xs text-muted-foreground">Awaiting data</span>
+                      <ArrowDownRight className="w-3 h-3 text-destructive" />
+                      <span className="text-xs text-muted-foreground">{filteredTransactions.filter(t => t.amount < 0).length} transactions</span>
                     </div>
                   </div>
                   <div className="w-12 h-12 rounded-2xl bg-destructive/10 flex items-center justify-center">
@@ -214,10 +293,16 @@ const Dashboard = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-muted-foreground">Savings Rate</p>
-                    <p className="text-2xl font-bold text-foreground">{totals.savingsRate}%</p>
+                    <p className={`text-2xl font-bold ${filteredTotals.savingsRate >= 20 ? 'text-success' : filteredTotals.savingsRate >= 0 ? 'text-foreground' : 'text-destructive'}`}>
+                      {filteredTotals.savingsRate}%
+                    </p>
                     <div className="flex items-center gap-1 mt-1">
-                      <ArrowUpRight className="w-3 h-3 text-muted-foreground" />
-                      <span className="text-xs text-muted-foreground">Awaiting data</span>
+                      {filteredTotals.savingsRate >= 20 ? (
+                        <ArrowUpRight className="w-3 h-3 text-success" />
+                      ) : (
+                        <ArrowDownRight className="w-3 h-3 text-muted-foreground" />
+                      )}
+                      <span className="text-xs text-muted-foreground">{filteredTotals.savingsRate >= 20 ? 'Great!' : 'Target: 20%'}</span>
                     </div>
                   </div>
                   <div className="w-12 h-12 rounded-2xl bg-accent/10 flex items-center justify-center">
@@ -238,7 +323,7 @@ const Dashboard = () => {
               <CardContent>
                 {spendingData.length === 0 ? (
                   <div className="h-[300px] flex flex-col items-center justify-center text-center text-muted-foreground gap-2">
-                    <p>No income/expense data yet.</p>
+                    <p>No data for selected period.</p>
                     <Link to="/transactions" className="text-primary font-medium">Add transactions to see this chart</Link>
                   </div>
                 ) : (

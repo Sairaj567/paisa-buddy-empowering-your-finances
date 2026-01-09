@@ -30,6 +30,38 @@ import {
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 
+type DateRange = "1W" | "1M" | "3M" | "6M" | "1Y" | "5Y" | "ALL";
+
+const dateRangeOptions: { value: DateRange; label: string }[] = [
+  { value: "1W", label: "1W" },
+  { value: "1M", label: "1M" },
+  { value: "3M", label: "3M" },
+  { value: "6M", label: "6M" },
+  { value: "1Y", label: "1Y" },
+  { value: "5Y", label: "5Y" },
+  { value: "ALL", label: "All" },
+];
+
+const getDateRangeStart = (range: DateRange): Date | null => {
+  const now = new Date();
+  switch (range) {
+    case "1W":
+      return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    case "1M":
+      return new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+    case "3M":
+      return new Date(now.getFullYear(), now.getMonth() - 3, now.getDate());
+    case "6M":
+      return new Date(now.getFullYear(), now.getMonth() - 6, now.getDate());
+    case "1Y":
+      return new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+    case "5Y":
+      return new Date(now.getFullYear() - 5, now.getMonth(), now.getDate());
+    case "ALL":
+      return null;
+  }
+};
+
 const quickActions = [
   { label: "Set Budget Alert", icon: AlertTriangle, href: "/budget" },
   { label: "Review Goals", icon: Target, href: "/goals" },
@@ -57,10 +89,18 @@ const Insights = () => {
   const { goals } = useGoals();
   const { budgets } = useBudgets();
   
+  const [dateRange, setDateRange] = useState<DateRange>("1M");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [aiInsight, setAiInsight] = useState<AIInsight | null>(null);
   const [aiState, setAiState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [aiError, setAiError] = useState("");
+
+  // Filter transactions by date range
+  const filteredTransactions = useMemo(() => {
+    const rangeStart = getDateRangeStart(dateRange);
+    if (!rangeStart) return transactions;
+    return transactions.filter((tx) => parseDate(tx.date) >= rangeStart);
+  }, [transactions, dateRange]);
 
   const handleRefresh = () => {
     setIsRefreshing(true);
@@ -68,21 +108,16 @@ const Insights = () => {
   };
 
   const totals = useMemo(() => {
-    const income = transactions.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0);
-    const expenses = transactions.filter((t) => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0);
+    const income = filteredTransactions.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0);
+    const expenses = filteredTransactions.filter((t) => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0);
     const net = income - expenses;
     const savingsRate = income > 0 ? Math.max(0, Math.round((net / income) * 100)) : 0;
     return { income, expenses, net, savingsRate };
-  }, [transactions]);
+  }, [filteredTransactions]);
 
   const weeklySpending = useMemo(() => {
-    const now = new Date();
-    const last30 = transactions.filter((t) => {
-      const d = parseDate(t.date);
-      return now.getTime() - d.getTime() <= 30 * 24 * 60 * 60 * 1000;
-    });
     const buckets: Record<string, number> = { Mon: 0, Tue: 0, Wed: 0, Thu: 0, Fri: 0, Sat: 0, Sun: 0 };
-    last30.forEach((t) => {
+    filteredTransactions.forEach((t) => {
       if (t.amount < 0) {
         const d = parseDate(t.date);
         const day = d.toLocaleDateString("en-US", { weekday: "short" });
@@ -90,11 +125,11 @@ const Insights = () => {
       }
     });
     return ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => ({ day, amount: buckets[day] || 0 }));
-  }, [transactions]);
+  }, [filteredTransactions]);
 
   const monthlyNet = useMemo(() => {
     const grouped: Record<string, { month: string; actual: number; projected?: number | null }> = {};
-    transactions.forEach((t) => {
+    filteredTransactions.forEach((t) => {
       const d = parseDate(t.date);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
       if (!grouped[key]) grouped[key] = { month: key, actual: 0, projected: null };
@@ -122,18 +157,18 @@ const Insights = () => {
     ] : [];
 
     return [...actualData, ...projected];
-  }, [transactions]);
+  }, [filteredTransactions]);
 
   const highestCategory = useMemo(() => {
     const buckets: Record<string, number> = {};
-    transactions.forEach((t) => {
+    filteredTransactions.forEach((t) => {
       if (t.amount < 0) {
         buckets[t.category || "Other"] = (buckets[t.category || "Other"] || 0) + Math.abs(t.amount);
       }
     });
     const entries = Object.entries(buckets).sort((a, b) => b[1] - a[1]);
     return entries[0] ? { category: entries[0][0], amount: entries[0][1] } : null;
-  }, [transactions]);
+  }, [filteredTransactions]);
 
   const topDay = useMemo(() => {
     const entries = weeklySpending.slice().sort((a, b) => b.amount - a.amount);
@@ -145,7 +180,7 @@ const Insights = () => {
     totals,
     highestCategory,
     topDay,
-    recent: transactions.slice(0, 20).map((tx) => ({
+    recent: filteredTransactions.slice(0, 20).map((tx) => ({
       name: tx.name,
       category: tx.category,
       amount: tx.amount,
@@ -163,7 +198,7 @@ const Insights = () => {
       spent: b.spent,
       percentUsed: b.limit > 0 ? Math.round((b.spent / b.limit) * 100) : 0,
     })),
-  }), [transactions, totals, highestCategory, topDay, goals, budgets]);
+  }), [filteredTransactions, totals, highestCategory, topDay, goals, budgets]);
 
   // Local insights (no API needed)
   const localInsights = useMemo(() => 
@@ -173,7 +208,7 @@ const Insights = () => {
   const handleGenerateAI = async () => {
     console.log("Generate AI clicked!");
     console.log("isAIConfigured:", isAIConfigured());
-    console.log("transactions.length:", transactions.length);
+    console.log("filteredTransactions.length:", filteredTransactions.length);
     
     if (!isAIConfigured()) {
       setAiState("error");
@@ -181,7 +216,7 @@ const Insights = () => {
       return;
     }
 
-    if (!transactions.length) {
+    if (!filteredTransactions.length) {
       setAiState("error");
       setAiError("Add some transactions first to get AI-powered insights.");
       return;
@@ -213,10 +248,28 @@ const Insights = () => {
               </h1>
               <p className="text-muted-foreground">Personalized financial recommendations</p>
             </div>
-            <Button variant="outline" onClick={handleRefresh} disabled={isRefreshing}>
-              <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
-              Refresh Insights
-            </Button>
+            <div className="flex items-center gap-3">
+              {/* Date Range Selector */}
+              <div className="flex items-center bg-muted/50 rounded-lg p-1">
+                {dateRangeOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    onClick={() => setDateRange(option.value)}
+                    className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all ${
+                      dateRange === option.value
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+              <Button variant="outline" onClick={handleRefresh} disabled={isRefreshing}>
+                <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+            </div>
           </div>
 
           {/* AI Summary Card */}
@@ -229,7 +282,7 @@ const Insights = () => {
                 </div>
                 <div className="flex-1">
                   <h2 className="text-xl font-semibold text-foreground mb-2">Financial Overview</h2>
-                  {transactions.length ? (
+                  {filteredTransactions.length ? (
                     <div className="space-y-2">
                       <p className="text-muted-foreground leading-relaxed">
                         Net this period: <span className={totals.net >= 0 ? "text-success font-medium" : "text-destructive font-medium"}>{formatCurrency(totals.net)}</span>
@@ -298,7 +351,7 @@ const Insights = () => {
               </div>
               <Button 
                 onClick={handleGenerateAI} 
-                disabled={aiState === "loading" || !transactions.length}
+                disabled={aiState === "loading" || !filteredTransactions.length}
                 variant={isAIConfigured() ? "default" : "outline"}
               >
                 {aiState === "loading" ? (
@@ -386,9 +439,9 @@ const Insights = () => {
                 <div className="text-center py-8">
                   <Sparkles className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
                   <p className="text-sm text-muted-foreground">
-                    {transactions.length 
+                    {filteredTransactions.length 
                       ? "Click 'Generate Insights' to get AI-powered financial analysis" 
-                      : "Add transactions to unlock AI insights"}
+                      : "No transactions in selected period"}
                   </p>
                 </div>
               )}
@@ -406,7 +459,7 @@ const Insights = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {transactions.length ? (
+                {filteredTransactions.length ? (
                   <>
                     <div className="h-[250px]">
                       <ResponsiveContainer width="100%" height="100%">
