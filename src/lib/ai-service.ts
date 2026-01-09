@@ -1,8 +1,45 @@
 // AI Service for Paisa Buddy
-// Uses OpenRouter API for financial insights
+// Uses OpenRouter API for financial insights with fallback models and keys
 
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const AI_MODEL = 'nvidia/nemotron-nano-12b-v2-vl:free';
+
+// Primary and fallback models (all free tier on OpenRouter)
+const AI_MODELS = [
+  'nvidia/nemotron-nano-12b-v2-vl:free',        // Primary - fast, good quality
+  'meta-llama/llama-3.2-3b-instruct:free',      // Fallback 1 - Meta Llama
+  'google/gemma-2-9b-it:free',                   // Fallback 2 - Google Gemma
+  'microsoft/phi-3-mini-128k-instruct:free',    // Fallback 3 - Microsoft Phi
+  'qwen/qwen-2-7b-instruct:free',               // Fallback 4 - Qwen
+];
+
+// Get all available API keys from environment variables
+const getApiKeys = (): string[] => {
+  const keys: string[] = [];
+  
+  // Primary key
+  const primaryKey = import.meta.env.VITE_OPENROUTER_API_KEY;
+  if (primaryKey) {
+    keys.push(primaryKey);
+  }
+  
+  // Additional fallback keys (VITE_OPENROUTER_API_KEY_2, VITE_OPENROUTER_API_KEY_3, etc.)
+  const key2 = import.meta.env.VITE_OPENROUTER_API_KEY_2;
+  const key3 = import.meta.env.VITE_OPENROUTER_API_KEY_3;
+  
+  if (key2) keys.push(key2);
+  if (key3) keys.push(key3);
+  
+  return keys;
+};
+
+// Rate limit tracking for both models and API keys
+const rateLimitState = {
+  blockedModels: new Map<string, number>(), // model -> unblock timestamp
+  blockedKeys: new Map<string, number>(),   // key -> unblock timestamp
+  lastRequestTime: 0,
+  minRequestInterval: 1500, // 1.5 seconds between requests
+  currentKeyIndex: 0,
+};
 
 export interface FinancialSnapshot {
   totals: {
@@ -42,7 +79,210 @@ export interface AIInsight {
 
 const getApiKey = () => import.meta.env.VITE_OPENROUTER_API_KEY;
 
-export const isAIConfigured = () => Boolean(getApiKey());
+export const isAIConfigured = () => getApiKeys().length > 0;
+
+// Get next available API key that isn't rate limited
+const getAvailableKey = (): string | null => {
+  const keys = getApiKeys();
+  const now = Date.now();
+  
+  // Try starting from current index, then wrap around
+  for (let i = 0; i < keys.length; i++) {
+    const index = (rateLimitState.currentKeyIndex + i) % keys.length;
+    const key = keys[index];
+    const blockedUntil = rateLimitState.blockedKeys.get(key);
+    
+    if (!blockedUntil || blockedUntil < now) {
+      if (blockedUntil && blockedUntil < now) {
+        rateLimitState.blockedKeys.delete(key);
+      }
+      rateLimitState.currentKeyIndex = index;
+      return key;
+    }
+  }
+  
+  return null;
+};
+
+// Mark an API key as rate limited
+const markKeyRateLimited = (key: string, retryAfterSeconds: number = 60) => {
+  const unblockTime = Date.now() + (retryAfterSeconds * 1000);
+  rateLimitState.blockedKeys.set(key, unblockTime);
+  // Move to next key
+  rateLimitState.currentKeyIndex = (rateLimitState.currentKeyIndex + 1) % getApiKeys().length;
+  console.log(`API key ...${key.slice(-8)} rate limited until ${new Date(unblockTime).toLocaleTimeString()}`);
+};
+
+// Get next available model that isn't rate limited
+const getAvailableModel = (): string | null => {
+  const now = Date.now();
+  
+  for (const model of AI_MODELS) {
+    const blockedUntil = rateLimitState.blockedModels.get(model);
+    if (!blockedUntil || blockedUntil < now) {
+      // Clear expired blocks
+      if (blockedUntil && blockedUntil < now) {
+        rateLimitState.blockedModels.delete(model);
+      }
+      return model;
+    }
+  }
+  
+  return null; // All models are rate limited
+};
+
+// Mark a model as rate limited
+const markModelRateLimited = (model: string, retryAfterSeconds: number = 60) => {
+  const unblockTime = Date.now() + (retryAfterSeconds * 1000);
+  rateLimitState.blockedModels.set(model, unblockTime);
+  console.log(`Model ${model} rate limited until ${new Date(unblockTime).toLocaleTimeString()}`);
+};
+
+// Throttle requests to avoid hitting rate limits
+const throttleRequest = async () => {
+  const now = Date.now();
+  const timeSinceLastRequest = now - rateLimitState.lastRequestTime;
+  
+  if (timeSinceLastRequest < rateLimitState.minRequestInterval) {
+    const waitTime = rateLimitState.minRequestInterval - timeSinceLastRequest;
+    await new Promise(resolve => setTimeout(resolve, waitTime));
+  }
+  
+  rateLimitState.lastRequestTime = Date.now();
+};
+
+// Make API request with automatic fallback for both models and API keys
+interface AIRequestOptions {
+  prompt: string;
+  maxTokens?: number;
+  temperature?: number;
+}
+
+async function makeAIRequest(options: AIRequestOptions): Promise<string> {
+  const keys = getApiKeys();
+  
+  if (keys.length === 0) {
+    throw new Error('No OpenRouter API keys available.');
+  }
+
+  let lastError: Error | null = null;
+  const triedCombinations = new Set<string>(); // Track tried key+model combinations
+
+  // Try each key with each model
+  const maxAttempts = keys.length * AI_MODELS.length;
+  
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const apiKey = getAvailableKey();
+    const model = getAvailableModel();
+    
+    if (!apiKey && !model) {
+      // Both all keys and models are rate limited
+      const keyUnblock = rateLimitState.blockedKeys.size > 0 
+        ? Math.min(...Array.from(rateLimitState.blockedKeys.values())) 
+        : Date.now();
+      const modelUnblock = rateLimitState.blockedModels.size > 0
+        ? Math.min(...Array.from(rateLimitState.blockedModels.values()))
+        : Date.now();
+      const nextUnblock = Math.min(keyUnblock, modelUnblock);
+      const waitSeconds = Math.max(1, Math.ceil((nextUnblock - Date.now()) / 1000));
+      throw new Error(`All AI resources are rate limited. Please wait ${waitSeconds} seconds and try again.`);
+    }
+    
+    if (!apiKey) {
+      const nextUnblock = Math.min(...Array.from(rateLimitState.blockedKeys.values()));
+      const waitSeconds = Math.ceil((nextUnblock - Date.now()) / 1000);
+      throw new Error(`All API keys are rate limited. Please wait ${waitSeconds} seconds.`);
+    }
+    
+    if (!model) {
+      const nextUnblock = Math.min(...Array.from(rateLimitState.blockedModels.values()));
+      const waitSeconds = Math.ceil((nextUnblock - Date.now()) / 1000);
+      throw new Error(`All AI models are rate limited. Please wait ${waitSeconds} seconds.`);
+    }
+
+    const combination = `${apiKey.slice(-8)}:${model}`;
+    if (triedCombinations.has(combination)) {
+      continue;
+    }
+    triedCombinations.add(combination);
+
+    try {
+      await throttleRequest();
+
+      console.log(`Trying: key ...${apiKey.slice(-8)} with model ${model.split('/')[1]}`);
+      
+      const response = await fetch(OPENROUTER_API_URL, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+          'HTTP-Referer': window.location.origin,
+          'X-Title': 'Paisa Buddy',
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'user', content: options.prompt }
+          ],
+          temperature: options.temperature ?? 0.7,
+          max_tokens: options.maxTokens ?? 1024,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        
+        if (response.status === 429) {
+          // Rate limited - check if it's the key or model
+          const retryAfter = parseInt(response.headers.get('Retry-After') || '60', 10);
+          const errorMsg = error.error?.message?.toLowerCase() || '';
+          
+          // If error mentions credits/quota, it's likely the key
+          if (errorMsg.includes('credit') || errorMsg.includes('quota') || errorMsg.includes('limit')) {
+            markKeyRateLimited(apiKey, retryAfter);
+          }
+          // Also block the model
+          markModelRateLimited(model, retryAfter);
+          
+          lastError = new Error(`Rate limited`);
+          continue; // Try next combination
+        }
+        
+        if (response.status === 401) {
+          // Invalid key - block it for a long time
+          markKeyRateLimited(apiKey, 3600); // 1 hour
+          lastError = new Error('Invalid API key');
+          continue;
+        }
+        
+        lastError = new Error(error.error?.message || `API error: ${response.status}`);
+        continue;
+      }
+
+      const data = await response.json();
+      const text = data?.choices?.[0]?.message?.content;
+
+      if (!text) {
+        lastError = new Error('Empty response from AI');
+        continue;
+      }
+
+      console.log(`✓ Success with key ...${apiKey.slice(-8)} and model ${model.split('/')[1]}`);
+      return text;
+      
+    } catch (err) {
+      if (err instanceof TypeError && err.message.includes('fetch')) {
+        // Network error - don't blame the key/model
+        lastError = new Error('Network error. Check your connection.');
+      } else {
+        lastError = err instanceof Error ? err : new Error(String(err));
+      }
+      console.warn(`✗ Failed:`, lastError.message);
+    }
+  }
+
+  throw lastError || new Error('All AI attempts failed. Please try again later.');
+}
 
 const buildFinancialPrompt = (snapshot: FinancialSnapshot): string => {
   return `You are a friendly and knowledgeable Indian financial advisor named "पैसा Buddy AI". Analyze this user's financial data and provide personalized insights in a warm, encouraging tone.
@@ -103,9 +343,7 @@ Provide a concise, helpful answer (2-4 sentences) with specific advice. Use ₹ 
 };
 
 export async function generateFinancialInsights(snapshot: FinancialSnapshot): Promise<AIInsight> {
-  const apiKey = getApiKey();
-  
-  if (!apiKey) {
+  if (!getApiKey()) {
     throw new Error('OpenRouter API key not configured. Add VITE_OPENROUTER_API_KEY to your .env file.');
   }
 
@@ -113,40 +351,11 @@ export async function generateFinancialInsights(snapshot: FinancialSnapshot): Pr
     throw new Error('No transaction data available. Add some transactions to get AI insights.');
   }
 
-  const response = await fetch(OPENROUTER_API_URL, {
-    method: 'POST',
-    headers: { 
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-      'HTTP-Referer': window.location.origin,
-      'X-Title': 'Paisa Buddy',
-    },
-    body: JSON.stringify({
-      model: AI_MODEL,
-      messages: [
-        { role: 'user', content: buildFinancialPrompt(snapshot) }
-      ],
-      temperature: 0.7,
-      max_tokens: 1024,
-    }),
+  const text = await makeAIRequest({
+    prompt: buildFinancialPrompt(snapshot),
+    maxTokens: 1024,
+    temperature: 0.7,
   });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    console.error('OpenRouter API error:', error);
-    
-    if (response.status === 429) {
-      throw new Error('Rate limit reached. Please wait a minute and try again.');
-    }
-    if (response.status === 401) {
-      throw new Error('Invalid API key. Please check your OpenRouter API key.');
-    }
-    
-    throw new Error(error.error?.message || 'Failed to generate insights. Please try again.');
-  }
-
-  const data = await response.json();
-  const text = data?.choices?.[0]?.message?.content;
 
   if (!text) {
     throw new Error('No response from AI. Please try again.');
@@ -186,39 +395,15 @@ export async function generateFinancialInsights(snapshot: FinancialSnapshot): Pr
 }
 
 export async function askFinancialQuestion(question: string, snapshot: FinancialSnapshot): Promise<string> {
-  const apiKey = getApiKey();
-  
-  if (!apiKey) {
+  if (!getApiKey()) {
     throw new Error('OpenRouter API key not configured.');
   }
 
-  const response = await fetch(OPENROUTER_API_URL, {
-    method: 'POST',
-    headers: { 
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-      'HTTP-Referer': window.location.origin,
-      'X-Title': 'Paisa Buddy',
-    },
-    body: JSON.stringify({
-      model: AI_MODEL,
-      messages: [
-        { role: 'user', content: buildQuickInsightPrompt(question, snapshot) }
-      ],
-      temperature: 0.7,
-      max_tokens: 256,
-    }),
+  const text = await makeAIRequest({
+    prompt: buildQuickInsightPrompt(question, snapshot),
+    maxTokens: 256,
+    temperature: 0.7,
   });
-
-  if (!response.ok) {
-    if (response.status === 429) {
-      throw new Error('Rate limit reached. Please wait a minute and try again.');
-    }
-    throw new Error('Failed to get answer. Please try again.');
-  }
-
-  const data = await response.json();
-  const text = data?.choices?.[0]?.message?.content;
 
   return text?.trim() || 'Sorry, I could not generate an answer. Please try again.';
 }
