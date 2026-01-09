@@ -1,5 +1,5 @@
 import type React from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Navbar from "@/components/layout/Navbar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -27,9 +27,11 @@ import {
   MoreHorizontal,
   Download,
   Upload,
-  Plus
+  Plus,
+  Loader2
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { useTransactions } from "@/hooks/useTransactions";
 import { toast } from "@/components/ui/sonner";
 
 const categoryIcons: { [key: string]: React.ReactNode } = {
@@ -53,19 +55,6 @@ type Transaction = {
   type: "Essentials" | "Needs" | "Wants" | "Income";
 };
 
-const demoTransactions: Transaction[] = [
-  { id: 1, name: "Swiggy Order", category: "Food & Dining", amount: -485, date: "Dec 30, 2024", type: "Wants" },
-  { id: 2, name: "Monthly Salary", category: "Income", amount: 52000, date: "Dec 29, 2024", type: "Income" },
-  { id: 3, name: "Electricity Bill", category: "Bills & Utilities", amount: -1850, date: "Dec 28, 2024", type: "Essentials" },
-  { id: 4, name: "Amazon Shopping", category: "Shopping", amount: -2999, date: "Dec 27, 2024", type: "Wants" },
-  { id: 5, name: "Petrol", category: "Transport", amount: -1200, date: "Dec 26, 2024", type: "Needs" },
-  { id: 6, name: "Rent Payment", category: "Housing", amount: -15000, date: "Dec 25, 2024", type: "Essentials" },
-  { id: 7, name: "Netflix Subscription", category: "Entertainment", amount: -649, date: "Dec 24, 2024", type: "Wants" },
-  { id: 8, name: "Grocery - BigBasket", category: "Food & Dining", amount: -2340, date: "Dec 23, 2024", type: "Essentials" },
-  { id: 9, name: "Doctor Visit", category: "Healthcare", amount: -800, date: "Dec 22, 2024", type: "Needs" },
-  { id: 10, name: "Freelance Payment", category: "Income", amount: 15000, date: "Dec 21, 2024", type: "Income" },
-];
-
 const typeColors: { [key: string]: string } = {
   "Essentials": "bg-primary/10 text-primary",
   "Needs": "bg-accent/10 text-accent",
@@ -75,10 +64,19 @@ const typeColors: { [key: string]: string } = {
 
 const Transactions = () => {
   const { user } = useAuth();
+  const { 
+    transactions: transactionsData, 
+    isLoading,
+    addTransaction, 
+    clearAll, 
+    importTransactions,
+    byType: summaryTotals 
+  } = useTransactions({ showDemoForGuests: true });
+  
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState("All");
-  const [transactionsData, setTransactionsData] = useState<Transaction[]>(user ? [] : demoTransactions);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
   const [newTransaction, setNewTransaction] = useState({
     name: "",
     category: "Other",
@@ -88,32 +86,6 @@ const Transactions = () => {
   });
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const exportLinkRef = useRef<HTMLAnchorElement | null>(null);
-  const storageKey = user ? `pb-transactions-${user.email}` : "pb-transactions-guest";
-
-  useEffect(() => {
-    if (user) {
-      const saved = localStorage.getItem(storageKey);
-      if (saved) {
-        try {
-          setTransactionsData(JSON.parse(saved));
-        } catch {
-          setTransactionsData([]);
-        }
-      } else {
-        setTransactionsData([]);
-      }
-    } else {
-      setTransactionsData(demoTransactions);
-    }
-    setSearchQuery("");
-    setActiveFilter("All");
-  }, [user, storageKey]);
-
-  useEffect(() => {
-    if (user) {
-      localStorage.setItem(storageKey, JSON.stringify(transactionsData));
-    }
-  }, [transactionsData, storageKey, user]);
 
   const filters = ["All", "Essentials", "Needs", "Wants", "Income"];
 
@@ -124,26 +96,10 @@ const Transactions = () => {
     return matchesSearch && matchesFilter;
   });
 
-  const summaryTotals = useMemo(() => {
-    const totals: Record<"Essentials" | "Needs" | "Wants" | "Income", number> = {
-      Essentials: 0,
-      Needs: 0,
-      Wants: 0,
-      Income: 0,
-    };
-    transactionsData.forEach((tx) => {
-      if (totals[tx.type] !== undefined) {
-        totals[tx.type] += Math.abs(tx.amount);
-      }
-    });
-    return totals;
-  }, [transactionsData]);
-
   const handleImportClick = () => fileInputRef.current?.click();
 
-  const handleClearAll = () => {
-    setTransactionsData([]);
-    localStorage.removeItem(storageKey);
+  const handleClearAll = async () => {
+    await clearAll();
     toast.success("All transactions deleted");
   };
 
@@ -301,17 +257,21 @@ const Transactions = () => {
 
         return {
           id: idx + 1,
-          name: getValue(cells, "name", 0) || `Transaction ${idx + 1}`,
-          category: getValue(cells, "category", 1) || "Other",
-          amount: Number(getValue(cells, "amount", 2)) || 0,
-          date: getValue(cells, "date", 3) || new Date().toDateString(),
-          type: (getValue(cells, "type", 4) as Transaction["type"]) || "Essentials",
+            name: getValue(cells, "name", 0) || `Transaction ${idx + 1}`,
+            category: getValue(cells, "category", 1) || "Other",
+            amount: Number(getValue(cells, "amount", 2)) || 0,
+            date: getValue(cells, "date", 3) || new Date().toDateString(),
+            type: (getValue(cells, "type", 4) as Transaction["type"]) || "Essentials",
         };
       });
 
-      setTransactionsData(normalized);
-      toast.success(`Imported ${normalized.length} transactions from CSV`);
+      // Use the hook's importTransactions to sync with Supabase
+      setIsImporting(true);
+      await importTransactions(normalized);
+      setIsImporting(false);
+      toast.success(`Imported ${normalized.length} transactions${user ? ' to cloud' : ''}`);
     } catch (error) {
+      setIsImporting(false);
       toast.error("Upload a CSV with columns: name, category, amount, date, type OR a bank export with Date, Particulars, Amount/Debit/Credit");
     } finally {
       event.target.value = "";
@@ -321,22 +281,20 @@ const Transactions = () => {
   const resetTransactionForm = () =>
     setNewTransaction({ name: "", category: "Other", amount: "", date: "", type: "Essentials" });
 
-  const handleAddTransaction = () => {
+  const handleAddTransaction = async () => {
     const amountValue = Number(newTransaction.amount);
     if (!newTransaction.name || Number.isNaN(amountValue)) {
       toast.error("Enter a name and valid amount.");
       return;
     }
 
-    const next: Transaction = {
-      id: transactionsData.length ? Math.max(...transactionsData.map((t) => t.id)) + 1 : 1,
+    await addTransaction({
       name: newTransaction.name,
       category: newTransaction.category || "Other",
       amount: amountValue,
-      date: newTransaction.date || new Date().toDateString(),
+      date: newTransaction.date || new Date().toISOString().slice(0, 10),
       type: newTransaction.type,
-    };
-    setTransactionsData((prev) => [...prev, next]);
+    });
     toast.success("Transaction added");
     resetTransactionForm();
     setAddDialogOpen(false);
@@ -391,21 +349,25 @@ const Transactions = () => {
               </h1>
               <p className="text-muted-foreground">Track and manage your expenses</p>
             </div>
-            <div className="flex gap-2">
-              <Button variant="destructive" size="sm" onClick={handleClearAll}>
+            <div className="flex gap-2 flex-wrap">
+              <Button variant="destructive" size="sm" onClick={handleClearAll} disabled={isLoading || isImporting}>
                 Clear All
               </Button>
-              <Button variant="outline" size="sm" onClick={() => handleExport("json")}>
+              <Button variant="outline" size="sm" onClick={() => handleExport("json")} disabled={isLoading}>
                 <Download className="w-4 h-4 mr-2" />
                 Export JSON
               </Button>
-              <Button variant="outline" size="sm" onClick={() => handleExport("csv")}>
+              <Button variant="outline" size="sm" onClick={() => handleExport("csv")} disabled={isLoading}>
                 <Download className="w-4 h-4 mr-2" />
                 Export CSV
               </Button>
-              <Button variant="outline" size="sm" onClick={handleImportClick}>
-                <Upload className="w-4 h-4 mr-2" />
-                Import CSV
+              <Button variant="outline" size="sm" onClick={handleImportClick} disabled={isImporting}>
+                {isImporting ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Upload className="w-4 h-4 mr-2" />
+                )}
+                {isImporting ? "Importing..." : "Import CSV"}
               </Button>
               <Button variant="hero" size="sm" onClick={() => setAddDialogOpen(true)}>
                 <Plus className="w-4 h-4 mr-2" />
@@ -476,6 +438,12 @@ const Transactions = () => {
               </CardTitle>
             </CardHeader>
             <CardContent>
+              {isLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+                </div>
+              ) : (
+              <>
               <div className="space-y-3">
                 {filteredTransactions.map((tx) => (
                   <div 
@@ -521,6 +489,8 @@ const Transactions = () => {
                     Import Transactions
                   </Button>
                 </div>
+              )}
+              </>
               )}
             </CardContent>
           </Card>
