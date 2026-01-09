@@ -10,11 +10,17 @@ services:
         - VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
         - VITE_OPENROUTER_API_KEY=${VITE_OPENROUTER_API_KEY}
     container_name: paisa-buddy
-    ports:
-      - "3080:80"
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+    networks:
+      - n8n-compose_default
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.paisa.rule=Host(`paisa.021413.xyz`)
+      - traefik.http.routers.paisa.entrypoints=web,websecure
+      - traefik.http.routers.paisa.tls=true
+      - traefik.http.routers.paisa.tls.certresolver=mytlschallenge
+      - traefik.http.services.paisa.loadbalancer.server.port=80
+
+networks:
+  n8n-compose_default:
+    external: true
