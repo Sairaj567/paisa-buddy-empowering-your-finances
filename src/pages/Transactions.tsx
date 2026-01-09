@@ -167,85 +167,157 @@ const Transactions = () => {
     if (!file) return;
     try {
       const text = await file.text();
-      const lines = text.trim().split(/\r?\n/).filter(Boolean);
-      if (!lines.length) throw new Error("Empty file");
+      
+      // Parse CSV properly handling multi-line quoted fields
+      const parseCSV = (csvText: string): string[][] => {
+        const rows: string[][] = [];
+        let currentRow: string[] = [];
+        let currentCell = '';
+        let inQuotes = false;
+        
+        for (let i = 0; i < csvText.length; i++) {
+          const char = csvText[i];
+          const nextChar = csvText[i + 1];
+          
+          if (inQuotes) {
+            if (char === '"' && nextChar === '"') {
+              currentCell += '"';
+              i++; // Skip escaped quote
+            } else if (char === '"') {
+              inQuotes = false;
+            } else {
+              currentCell += char;
+            }
+          } else {
+            if (char === '"') {
+              inQuotes = true;
+            } else if (char === ',') {
+              currentRow.push(currentCell.trim());
+              currentCell = '';
+            } else if (char === '\n' || (char === '\r' && nextChar === '\n')) {
+              if (char === '\r') i++; // Skip \r in \r\n
+              currentRow.push(currentCell.trim());
+              if (currentRow.some(cell => cell.length > 0)) {
+                rows.push(currentRow);
+              }
+              currentRow = [];
+              currentCell = '';
+            } else if (char !== '\r') {
+              currentCell += char;
+            }
+          }
+        }
+        // Don't forget last row
+        if (currentCell || currentRow.length > 0) {
+          currentRow.push(currentCell.trim());
+          if (currentRow.some(cell => cell.length > 0)) {
+            rows.push(currentRow);
+          }
+        }
+        return rows;
+      };
+      
+      const allRows = parseCSV(text);
+      if (!allRows.length) throw new Error("Empty file");
 
-      const parseLine = (line: string) =>
-        line.match(/("([^"]|"")*"|[^,]+)/g)?.map((cell) =>
-          cell.replace(/^"|"$/g, "").replace(/""/g, "").trim()
-        ) ?? [];
-
-      const headerCells = parseLine(lines[0]);
+      const headerCells = allRows[0];
       const header = headerCells.map((h) => h.toLowerCase());
-
-      const requiredStandard = ["name", "category", "amount", "date", "type"];
-      const isStandard = requiredStandard.every((key) => header.includes(key));
 
       // Bank export detection - supports multiple formats:
       // 1. Date, Particulars, Debit, Credit, Balance
       // 2. Date, Particulars, Amount, Balance (like user's CSV)
+      // Also handle "tran date" as date header
+      const dateHeaderIdx = header.findIndex(h => h === 'date' || h === 'tran date');
       const isBankExport = header.includes("particulars") && (
         header.includes("debit") || 
         header.includes("credit") || 
         header.includes("amount")
       );
 
-      const dataLines = (isStandard || isBankExport) ? lines.slice(1) : lines;
+      const dataRows = allRows.slice(1); // Skip header row
 
       const getValue = (cells: string[], key: string, idxFallback: number) => {
-        if (isStandard || isBankExport) {
-          const headerIndex = header.indexOf(key);
-          if (headerIndex >= 0) return cells[headerIndex] ?? "";
-          // Fallback to positional map for bank exports if headers are slightly off
-          if (isBankExport) {
-            const bankPositions: Record<string, number> = {
-              date: 0,
-              particulars: 1,
-              debit: 2,
-              credit: 3,
-              balance: 4,
-            };
-            if (bankPositions[key] !== undefined) return cells[bankPositions[key]] ?? "";
-          }
+        // Handle "tran date" → "date" mapping
+        const actualKey = key === 'date' && header.includes('tran date') ? 'tran date' : key;
+        const headerIndex = header.indexOf(actualKey);
+        if (headerIndex >= 0) return cells[headerIndex] ?? "";
+        // Fallback to positional map for bank exports if headers are slightly off
+        if (isBankExport) {
+          const bankPositions: Record<string, number> = {
+            date: 0,
+            particulars: 2, // Usually after date and chq no
+            debit: 3,
+            credit: 4,
+            balance: 5,
+          };
+          if (bankPositions[key] !== undefined) return cells[bankPositions[key]] ?? "";
         }
         return cells[idxFallback] ?? "";
       };
 
-      // Helper to validate and normalize date
+      // Helper to validate date string
       const isValidDate = (dateStr: string): boolean => {
         if (!dateStr) return false;
         // Check for common invalid patterns
         const lowerDate = dateStr.toLowerCase();
         if (lowerDate.includes('opening') || lowerDate.includes('closing') || 
             lowerDate.includes('balance') || lowerDate.includes('total') ||
-            lowerDate.includes('statement') || lowerDate.includes('summary')) {
+            lowerDate.includes('statement') || lowerDate.includes('summary') ||
+            lowerDate.includes('tran date') || lowerDate.includes('date')) {
           return false;
         }
-        // Try to parse as date
-        const parsed = Date.parse(dateStr);
-        return !isNaN(parsed);
+        // Check if it matches common date patterns
+        // DD-MM-YYYY, DD/MM/YYYY, YYYY-MM-DD, etc.
+        return /^\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4}$/.test(dateStr.trim()) ||
+               /^\d{4}[-\/]\d{1,2}[-\/]\d{1,2}$/.test(dateStr.trim());
+      };
+
+      // Parse DD-MM-YYYY or DD/MM/YYYY format (Indian bank format)
+      const parseIndianDate = (dateStr: string): Date | null => {
+        if (!dateStr) return null;
+        const cleaned = dateStr.trim();
+        
+        // Try DD-MM-YYYY or DD/MM/YYYY
+        const ddmmyyyy = cleaned.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/);
+        if (ddmmyyyy) {
+          const day = parseInt(ddmmyyyy[1], 10);
+          const month = parseInt(ddmmyyyy[2], 10) - 1; // JS months are 0-indexed
+          const year = parseInt(ddmmyyyy[3], 10);
+          const date = new Date(year, month, day);
+          if (!isNaN(date.getTime()) && date.getDate() === day) {
+            return date;
+          }
+        }
+        
+        // Try YYYY-MM-DD
+        const yyyymmdd = cleaned.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})$/);
+        if (yyyymmdd) {
+          const year = parseInt(yyyymmdd[1], 10);
+          const month = parseInt(yyyymmdd[2], 10) - 1;
+          const day = parseInt(yyyymmdd[3], 10);
+          const date = new Date(year, month, day);
+          if (!isNaN(date.getTime())) {
+            return date;
+          }
+        }
+        
+        return null;
       };
 
       const normalizeDate = (dateStr: string): string => {
-        if (!dateStr || !isValidDate(dateStr)) {
-          return new Date().toISOString().slice(0, 10);
+        const parsed = parseIndianDate(dateStr);
+        if (parsed) {
+          return parsed.toISOString().slice(0, 10);
         }
-        // Try to convert to YYYY-MM-DD format for Supabase
-        const parsed = new Date(dateStr);
-        if (isNaN(parsed.getTime())) {
-          return new Date().toISOString().slice(0, 10);
-        }
-        return parsed.toISOString().slice(0, 10);
+        return new Date().toISOString().slice(0, 10);
       };
 
-      const normalized: Transaction[] = dataLines
-        .map((line, idx) => {
-        const cells = parseLine(line);
-
+      const normalized: Transaction[] = dataRows
+        .map((cells, idx) => {
         if (isBankExport) {
-          const particulars = getValue(cells, "particulars", 1);
-          const debitRaw = getValue(cells, "debit", 2);
-          const creditRaw = getValue(cells, "credit", 3);
+          const particulars = getValue(cells, "particulars", 2);
+          const debitRaw = getValue(cells, "debit", 3);
+          const creditRaw = getValue(cells, "credit", 4);
           const amountRaw = getValue(cells, "amount", 2); // For CSV with single Amount column
           const dateRaw = getValue(cells, "date", 0);
 
@@ -264,14 +336,14 @@ const Transactions = () => {
           const credit = parseAmount(creditRaw);
           
           let amount = 0;
-          // Check if there's a single Amount column (like in the user's CSV)
+          // Check if there's a single Amount column (like in some CSV formats)
           if (header.includes("amount") && amountRaw) {
             amount = parseAmount(amountRaw);
           } else if (debit && !credit) {
             amount = -Math.abs(debit);
           } else if (credit && !debit) {
             amount = Math.abs(credit);
-          } else {
+          } else if (credit || debit) {
             amount = credit - debit;
           }
 
