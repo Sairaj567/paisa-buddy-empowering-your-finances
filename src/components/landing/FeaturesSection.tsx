@@ -5,7 +5,7 @@ import {
   BarChart3, 
   Brain, 
   Shield, 
-  Smartphone,
+  Sparkles,
   MessageCircle,
   BookOpen,
   Scan
@@ -61,9 +61,9 @@ const features = [
     color: "bg-destructive/10 text-destructive",
   },
   {
-    icon: Smartphone,
-    title: "Multilingual",
-    description: "Available in English, Hindi, and Marathi for seamless experience.",
+    icon: Sparkles,
+    title: "AI Chat Assistant",
+    description: "Ask questions about your finances and get personalized AI-powered advice instantly.",
     color: "bg-primary/10 text-primary",
   },
 ];
