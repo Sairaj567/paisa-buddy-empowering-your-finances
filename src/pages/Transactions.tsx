@@ -211,7 +211,35 @@ const Transactions = () => {
         return cells[idxFallback] ?? "";
       };
 
-      const normalized: Transaction[] = dataLines.map((line, idx) => {
+      // Helper to validate and normalize date
+      const isValidDate = (dateStr: string): boolean => {
+        if (!dateStr) return false;
+        // Check for common invalid patterns
+        const lowerDate = dateStr.toLowerCase();
+        if (lowerDate.includes('opening') || lowerDate.includes('closing') || 
+            lowerDate.includes('balance') || lowerDate.includes('total') ||
+            lowerDate.includes('statement') || lowerDate.includes('summary')) {
+          return false;
+        }
+        // Try to parse as date
+        const parsed = Date.parse(dateStr);
+        return !isNaN(parsed);
+      };
+
+      const normalizeDate = (dateStr: string): string => {
+        if (!dateStr || !isValidDate(dateStr)) {
+          return new Date().toISOString().slice(0, 10);
+        }
+        // Try to convert to YYYY-MM-DD format for Supabase
+        const parsed = new Date(dateStr);
+        if (isNaN(parsed.getTime())) {
+          return new Date().toISOString().slice(0, 10);
+        }
+        return parsed.toISOString().slice(0, 10);
+      };
+
+      const normalized: Transaction[] = dataLines
+        .map((line, idx) => {
         const cells = parseLine(line);
 
         if (isBankExport) {
@@ -220,6 +248,11 @@ const Transactions = () => {
           const creditRaw = getValue(cells, "credit", 3);
           const amountRaw = getValue(cells, "amount", 2); // For CSV with single Amount column
           const dateRaw = getValue(cells, "date", 0);
+
+          // Skip invalid rows (opening balance, closing balance, etc.)
+          if (!isValidDate(dateRaw)) {
+            return null;
+          }
 
           const parseAmount = (val: string) => {
             const cleaned = String(val).replace(/[\s,\u00A0]/g, "").replace(/[^0-9.\-]/g, "");
@@ -242,6 +275,11 @@ const Transactions = () => {
             amount = credit - debit;
           }
 
+          // Skip zero-amount transactions
+          if (amount === 0) {
+            return null;
+          }
+
           // Use smart category detection
           const detected = detectCategory(particulars, amount);
 
@@ -250,20 +288,22 @@ const Transactions = () => {
             name: particulars || `Transaction ${idx + 1}`,
             category: detected.category,
             amount,
-            date: dateRaw || new Date().toISOString().slice(0, 10),
+            date: normalizeDate(dateRaw),
             type: detected.type,
           };
         }
 
+        const dateVal = getValue(cells, "date", 3);
         return {
           id: idx + 1,
             name: getValue(cells, "name", 0) || `Transaction ${idx + 1}`,
             category: getValue(cells, "category", 1) || "Other",
             amount: Number(getValue(cells, "amount", 2)) || 0,
-            date: getValue(cells, "date", 3) || new Date().toDateString(),
+            date: normalizeDate(dateVal),
             type: (getValue(cells, "type", 4) as Transaction["type"]) || "Essentials",
         };
-      });
+      })
+      .filter((tx): tx is Transaction => tx !== null && tx.amount !== 0);
 
       // Use the hook's importTransactions to sync with Supabase
       setIsImporting(true);
