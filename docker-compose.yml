@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  paisa-buddy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - VITE_SUPABASE_URL=${VITE_SUPABASE_URL}
+        - VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
+        - VITE_OPENROUTER_API_KEY=${VITE_OPENROUTER_API_KEY}
+    container_name: paisa-buddy
+    ports:
+      - "3080:80"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
