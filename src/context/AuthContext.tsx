@@ -14,10 +14,11 @@ interface AuthContextValue {
   isSupabaseEnabled: boolean;
   signUp: (email: string, password: string, name?: string) => Promise<{ error: Error | null }>;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
+  signInWithGoogle: () => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
   // Legacy methods for localStorage fallback
   login: (user: AuthUser) => void;
-  logout: () => void;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -122,6 +123,30 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return { error: null };
   };
 
+  // Google OAuth sign in
+  const signInWithGoogle = async () => {
+    if (!isSupabaseEnabled) {
+      return { error: new Error("Google sign-in requires Supabase to be configured.") };
+    }
+
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/dashboard`,
+        queryParams: {
+          access_type: 'offline',
+          prompt: 'consent',
+        },
+      },
+    });
+
+    if (error) {
+      return { error: new Error(error.message) };
+    }
+
+    return { error: null };
+  };
+
   // Supabase sign out
   const signOut = async () => {
     const userEmail = user?.email;
@@ -172,6 +197,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       isSupabaseEnabled,
       signUp,
       signIn,
+      signInWithGoogle,
       signOut,
       login,
       logout,
