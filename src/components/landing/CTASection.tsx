@@ -36,26 +36,10 @@ const CTASection = () => {
               </Button>
             </Link>
             <Link to="/learn">
-              <Button variant="outline" size="xl" className="w-full sm:w-auto border-primary-foreground/30 text-primary-foreground hover:bg-primary-foreground/10">
+              <Button size="xl" className="w-full sm:w-auto bg-transparent border-2 border-primary-foreground text-primary-foreground hover:bg-primary-foreground/20">
                 Explore Features
               </Button>
             </Link>
-          </div>
-
-          {/* Stats */}
-          <div className="grid grid-cols-3 gap-8 mt-16 pt-8 border-t border-primary-foreground/20">
-            <div>
-              <p className="text-3xl md:text-4xl font-bold text-primary-foreground">10K+</p>
-              <p className="text-sm text-primary-foreground/70">Active Users</p>
-            </div>
-            <div>
-              <p className="text-3xl md:text-4xl font-bold text-primary-foreground">₹50Cr+</p>
-              <p className="text-sm text-primary-foreground/70">Tracked</p>
-            </div>
-            <div>
-              <p className="text-3xl md:text-4xl font-bold text-primary-foreground">4.8★</p>
-              <p className="text-sm text-primary-foreground/70">User Rating</p>
-            </div>
           </div>
         </div>
       </div>

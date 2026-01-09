@@ -75,8 +75,8 @@ const FeaturesSection = () => {
         {/* Header */}
         <div className="text-center max-w-2xl mx-auto mb-16">
           <h2 className="text-3xl md:text-4xl font-display font-bold text-foreground mb-4">
-            Everything You Need to
-            <span className="text-gradient-primary block">Master Your Money</span>
+            Everything You Need to{" "}
+            <span className="text-primary">Master Your Money</span>
           </h2>
           <p className="text-lg text-muted-foreground">
             Powered by multiple AI agents working together to give you personalized financial insights and recommendations.

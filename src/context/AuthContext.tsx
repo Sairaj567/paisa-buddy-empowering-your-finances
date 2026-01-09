@@ -124,11 +124,32 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   // Supabase sign out
   const signOut = async () => {
+    const userEmail = user?.email;
+    
     if (isSupabaseEnabled) {
       await supabase.auth.signOut();
     }
+    
+    // Clear user state first
     setUser(null);
+    
+    // Clear all user-related localStorage data
     localStorage.removeItem(STORAGE_KEY);
+    
+    // Clear user-specific data keys
+    if (userEmail) {
+      localStorage.removeItem(`pb-transactions-${userEmail}`);
+      localStorage.removeItem(`pb-goals-${userEmail}`);
+      localStorage.removeItem(`pb-budgets-${userEmail}`);
+      localStorage.removeItem(`pb-settings-${userEmail}`);
+      localStorage.removeItem(`pb-learn-progress-${userEmail}`);
+    }
+    
+    // Also clear guest data
+    localStorage.removeItem('pb-transactions-guest');
+    localStorage.removeItem('pb-goals-guest');
+    localStorage.removeItem('pb-budgets-guest');
+    localStorage.removeItem('pb-settings-guest');
   };
 
   // Legacy login method (for backward compatibility)
@@ -140,8 +161,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   // Legacy logout method
-  const logout = () => {
-    signOut();
+  const logout = async () => {
+    await signOut();
   };
 
   const value = useMemo(

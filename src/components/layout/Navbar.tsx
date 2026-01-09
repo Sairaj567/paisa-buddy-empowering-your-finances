@@ -74,7 +74,7 @@ const Navbar = () => {
                   </div>
                   <Settings className="w-4 h-4 text-muted-foreground" />
                 </Link>
-                <Button variant="outline" size="sm" onClick={() => { logout(); navigate("/"); }}>
+                <Button variant="outline" size="sm" onClick={async () => { await logout(); navigate("/"); }}>
                   Logout
                 </Button>
               </>
@@ -146,8 +146,8 @@ const Navbar = () => {
                     <Button
                       variant="outline"
                       className="w-full"
-                      onClick={() => {
-                        logout();
+                      onClick={async () => {
+                        await logout();
                         setIsOpen(false);
                         navigate("/");
                       }}

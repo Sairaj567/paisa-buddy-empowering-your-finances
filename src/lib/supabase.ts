@@ -12,7 +12,21 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const supabase = createClient<Database>(
   supabaseUrl || 'https://placeholder.supabase.co',
-  supabaseAnonKey || 'placeholder-key'
+  supabaseAnonKey || 'placeholder-key',
+  {
+    auth: {
+      // Use localStorage for session persistence (works across tabs)
+      storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+      // Automatically refresh tokens before they expire
+      autoRefreshToken: true,
+      // Persist session across browser restarts
+      persistSession: true,
+      // Detect session from URL (for OAuth redirects)
+      detectSessionInUrl: true,
+      // Storage key for the session
+      storageKey: 'pb-supabase-auth',
+    },
+  }
 );
 
 // Helper to check if Supabase is configured
