@@ -7,7 +7,11 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install dependencies
-RUN npm ci
+RUN if [ -f package-lock.json ]; then \
+			npm ci --no-audit --no-fund; \
+		else \
+			npm install --no-audit --no-fund; \
+		fi
 
 # Copy source code
 COPY . .
@@ -16,11 +20,15 @@ COPY . .
 ARG VITE_SUPABASE_URL
 ARG VITE_SUPABASE_ANON_KEY
 ARG VITE_OPENROUTER_API_KEY
+ARG VITE_OPENROUTER_API_KEY_2
+ARG VITE_OPENROUTER_API_KEY_3
 
 # Set environment variables for build
 ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
 ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
 ENV VITE_OPENROUTER_API_KEY=$VITE_OPENROUTER_API_KEY
+ENV VITE_OPENROUTER_API_KEY_2=$VITE_OPENROUTER_API_KEY_2
+ENV VITE_OPENROUTER_API_KEY_3=$VITE_OPENROUTER_API_KEY_3
 
 # Build the app
 RUN npm run build
