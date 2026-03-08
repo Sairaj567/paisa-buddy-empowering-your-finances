@@ -16,7 +16,7 @@ pipeline {
         APP_NAME = 'paisa-buddy'
         STATIC_DEPLOY_DIR = '/var/www/paisa-buddy'
         RELOAD_COMMAND = 'sudo systemctl reload nginx'
-        NODE_HOME = '/usr/local/node'
+        NODE_HOME = "${JENKINS_HOME}/tools/node"
         PATH = "${NODE_HOME}/bin:${env.PATH}"
     }
 
