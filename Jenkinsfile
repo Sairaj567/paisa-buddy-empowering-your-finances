@@ -32,13 +32,14 @@ pipeline {
             steps {
                 sh '''
                     set -eu
-                    rm -f source.tar.gz
+                    ARCHIVE_PATH="/tmp/${APP_NAME}-${BUILD_NUMBER}-source.tar.gz"
+                    rm -f "$ARCHIVE_PATH"
                     tar \
                       --exclude=.git \
                       --exclude=node_modules \
                       --exclude=dist \
                       --exclude=source.tar.gz \
-                      -czf source.tar.gz .
+                      -czf "$ARCHIVE_PATH" .
                 '''
             }
         }
@@ -55,9 +56,10 @@ pipeline {
                         fi
 
                         REMOTE_DIR="/tmp/${APP_NAME}-${BUILD_NUMBER}"
+                        ARCHIVE_PATH="/tmp/${APP_NAME}-${BUILD_NUMBER}-source.tar.gz"
 
                         ssh -o StrictHostKeyChecking=no "${ORACLE_USER}@${ORACLE_HOST}" "set -eu; rm -rf '${REMOTE_DIR}'; mkdir -p '${REMOTE_DIR}'"
-                        scp -o StrictHostKeyChecking=no source.tar.gz "${ORACLE_USER}@${ORACLE_HOST}:${REMOTE_DIR}/source.tar.gz"
+                        scp -o StrictHostKeyChecking=no "$ARCHIVE_PATH" "${ORACLE_USER}@${ORACLE_HOST}:${REMOTE_DIR}/source.tar.gz"
                         ssh -o StrictHostKeyChecking=no "${ORACLE_USER}@${ORACLE_HOST}" "set -eu; cd '${REMOTE_DIR}'; tar -xzf source.tar.gz; docker run --rm -v '${REMOTE_DIR}:/workspace' -w /workspace node:20-alpine sh -lc 'set -eu; if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi; npm run lint'"
                     '''
                 }
@@ -162,6 +164,10 @@ EOF
             echo '❌ Pipeline failed. Check the stage logs for details.'
         }
         always {
+            sh '''
+                set +e
+                rm -f "/tmp/${APP_NAME}-${BUILD_NUMBER}-source.tar.gz"
+            '''
             deleteDir()
         }
     }
