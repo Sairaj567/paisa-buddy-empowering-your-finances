@@ -15,7 +15,7 @@ pipeline {
         DOCKER_IMAGE = 'paisa-buddy'
         DOCKER_TAG = "${env.BUILD_NUMBER}"
         CONTAINER_PORT = '3000'
-        HOST_PORT = '80'
+        HOST_PORT = '3000'
     }
 
     stages {
