@@ -16,9 +16,29 @@ pipeline {
         APP_NAME = 'paisa-buddy'
         STATIC_DEPLOY_DIR = '/var/www/paisa-buddy'
         RELOAD_COMMAND = 'sudo systemctl reload nginx'
+        NODE_HOME = '/usr/local/node'
+        PATH = "${NODE_HOME}/bin:${env.PATH}"
     }
 
     stages {
+        stage('Setup Node.js') {
+            steps {
+                sh '''
+                    set -eu
+                    if command -v node >/dev/null 2>&1; then
+                        echo "Node.js already installed: $(node --version)"
+                    else
+                        echo "Installing Node.js 20..."
+                        curl -fsSL https://nodejs.org/dist/v20.18.3/node-v20.18.3-linux-x64.tar.xz -o /tmp/node.tar.xz
+                        mkdir -p "$NODE_HOME"
+                        tar -xJf /tmp/node.tar.xz -C "$NODE_HOME" --strip-components=1
+                        rm -f /tmp/node.tar.xz
+                        echo "Installed: $(node --version)"
+                    fi
+                '''
+            }
+        }
+
         stage('Checkout') {
             steps {
                 checkout scm
