@@ -9,20 +9,16 @@ pipeline {
         buildDiscarder(logRotator(numToKeepStr: '20', artifactNumToKeepStr: '10'))
     }
 
-    parameters {
-        booleanParam(name: 'DEPLOY_ENABLED', defaultValue: true, description: 'Deploy the built app after a successful build.')
-        string(name: 'DEPLOY_BRANCH', defaultValue: 'main', description: 'Only deploy when this branch is built.')
-        string(name: 'ORACLE_HOST', defaultValue: '', description: 'Oracle VM host or public IP address.')
-        string(name: 'ORACLE_USER', defaultValue: 'ubuntu', description: 'SSH user for the Oracle VM.')
-        string(name: 'SSH_CREDENTIALS_ID', defaultValue: 'oracle-vm-ssh-key', description: 'Jenkins SSH credentials ID used for deployment.')
-        string(name: 'APP_NAME', defaultValue: 'paisa-buddy', description: 'App name used for temporary remote build paths.')
-        string(name: 'STATIC_DEPLOY_DIR', defaultValue: '/var/www/paisa-buddy', description: 'Directory from which Nginx serves the built static files.')
-        string(name: 'RELOAD_COMMAND', defaultValue: 'sudo systemctl reload nginx', description: 'Command run after deployment to reload the web server. Leave empty to skip.')
-    }
-
     environment {
         CI = 'true'
         NODE_ENV = 'production'
+        DEPLOY_BRANCH = 'main'
+        ORACLE_HOST = '140.245.23.142'
+        ORACLE_USER = 'ubuntu'
+        SSH_CREDENTIALS_ID = 'oracle-vm-ssh-key'
+        APP_NAME = 'paisa-buddy'
+        STATIC_DEPLOY_DIR = '/var/www/paisa-buddy'
+        RELOAD_COMMAND = 'sudo systemctl reload nginx'
     }
 
     stages {
@@ -49,7 +45,7 @@ pipeline {
 
         stage('Lint on Remote Host') {
             steps {
-                sshagent([params.SSH_CREDENTIALS_ID]) {
+                sshagent([env.SSH_CREDENTIALS_ID]) {
                     sh '''
                         set -eu
 
@@ -92,13 +88,13 @@ pipeline {
                             string(credentialsId: 'VITE_OPENROUTER_API_KEY_2', variable: 'VITE_OPENROUTER_API_KEY_2'),
                             string(credentialsId: 'VITE_OPENROUTER_API_KEY_3', variable: 'VITE_OPENROUTER_API_KEY_3')
                         ]) {
-                            sshagent([params.SSH_CREDENTIALS_ID]) {
+                            sshagent([env.SSH_CREDENTIALS_ID]) {
                                 sh remoteBuildCommand
                             }
                         }
                     } catch (Exception ignored) {
                         echo 'Some optional Vite credentials are not configured in Jenkins. Building static files without injected secret build args.'
-                        sshagent([params.SSH_CREDENTIALS_ID]) {
+                        sshagent([env.SSH_CREDENTIALS_ID]) {
                             sh '''
                                 set -eu
 
@@ -120,16 +116,15 @@ pipeline {
         stage('Deploy Static Files') {
             when {
                 allOf {
-                    expression { params.DEPLOY_ENABLED }
-                    expression { params.ORACLE_HOST?.trim() }
+                    expression { env.ORACLE_HOST?.trim() }
                     expression {
                         def branch = env.BRANCH_NAME ?: env.GIT_BRANCH ?: ''
-                        return branch == params.DEPLOY_BRANCH || branch.endsWith("/${params.DEPLOY_BRANCH}")
+                        return branch == env.DEPLOY_BRANCH || branch.endsWith("/${env.DEPLOY_BRANCH}")
                     }
                 }
             }
             steps {
-                sshagent([params.SSH_CREDENTIALS_ID]) {
+                sshagent([env.SSH_CREDENTIALS_ID]) {
                     sh '''
                         set -eu
 
