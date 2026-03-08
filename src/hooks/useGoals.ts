@@ -101,7 +101,7 @@ export function useGoals() {
       
       const { data, error } = await supabase
         .from('goals')
-        .insert(insertData as any)
+        .insert(insertData as unknown as Record<string, unknown>)
         .select()
         .single();
 
@@ -146,7 +146,7 @@ export function useGoals() {
     if (isSupabaseEnabled && user?.id && user.id !== 'local') {
       const { error } = await supabase
         .from('goals')
-        // @ts-ignore - Supabase types don't infer properly when not configured
+        // @ts-expect-error - Supabase types don't infer properly when not configured
         .update(dbUpdates)
         .eq('id', id)
         .eq('user_id', user.id);
@@ -224,7 +224,7 @@ export function useGoals() {
 
       const { data, error } = await supabase
         .from('goals')
-        .insert(toInsert as any)
+        .insert(toInsert as unknown as Record<string, unknown>[])
         .select();
 
       if (error) {

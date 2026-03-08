@@ -384,7 +384,7 @@ export async function generateFinancialInsights(snapshot: FinancialSnapshot): Pr
   // Fallback: extract text content without JSON formatting
   let cleanSummary = text.trim();
   // Remove any JSON-like structures from the summary
-  cleanSummary = cleanSummary.replace(/[\{\}\[\]",]/g, ' ').replace(/\s+/g, ' ').trim();
+  cleanSummary = cleanSummary.replace(/[{}[\]",]/g, ' ').replace(/\s+/g, ' ').trim();
   
   return {
     summary: cleanSummary || 'Analysis complete. Check your spending patterns above.',

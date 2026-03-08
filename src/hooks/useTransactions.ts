@@ -147,7 +147,7 @@ export function useTransactions(options: UseTransactionsOptions = {}) {
       
       const { data, error } = await supabase
         .from('transactions')
-        .insert(insertData as any)
+        .insert(insertData as unknown as Record<string, unknown>)
         .select()
         .single();
 
@@ -179,7 +179,7 @@ export function useTransactions(options: UseTransactionsOptions = {}) {
     if (isSupabaseEnabled && user?.id && user.id !== 'local') {
       const { error } = await supabase
         .from('transactions')
-        // @ts-ignore - Supabase types don't infer properly when not configured
+        // @ts-expect-error - Supabase types don't infer properly when not configured
         .update(updates)
         .eq('id', id)
         .eq('user_id', user.id);
@@ -248,7 +248,7 @@ export function useTransactions(options: UseTransactionsOptions = {}) {
 
       const { data, error } = await supabase
         .from('transactions')
-        .insert(toInsert as any)
+        .insert(toInsert as unknown as Record<string, unknown>[])
         .select();
 
       if (error) {

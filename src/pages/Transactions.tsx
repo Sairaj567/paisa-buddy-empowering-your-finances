@@ -276,8 +276,8 @@ const Transactions = () => {
         }
         // Check if it matches common date patterns
         // DD-MM-YYYY, DD/MM/YYYY, YYYY-MM-DD, etc.
-        return /^\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4}$/.test(dateStr.trim()) ||
-               /^\d{4}[-\/]\d{1,2}[-\/]\d{1,2}$/.test(dateStr.trim());
+        return /^\d{1,2}[-/]\d{1,2}[-/]\d{2,4}$/.test(dateStr.trim()) ||
+               /^\d{4}[-/]\d{1,2}[-/]\d{1,2}$/.test(dateStr.trim());
       };
 
       // Parse DD-MM-YYYY or DD/MM/YYYY format (Indian bank format)
@@ -286,7 +286,7 @@ const Transactions = () => {
         const cleaned = dateStr.trim();
         
         // Try DD-MM-YYYY or DD/MM/YYYY
-        const ddmmyyyy = cleaned.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/);
+        const ddmmyyyy = cleaned.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
         if (ddmmyyyy) {
           const day = parseInt(ddmmyyyy[1], 10);
           const month = parseInt(ddmmyyyy[2], 10) - 1; // JS months are 0-indexed
@@ -298,7 +298,7 @@ const Transactions = () => {
         }
         
         // Try YYYY-MM-DD
-        const yyyymmdd = cleaned.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})$/);
+        const yyyymmdd = cleaned.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
         if (yyyymmdd) {
           const year = parseInt(yyyymmdd[1], 10);
           const month = parseInt(yyyymmdd[2], 10) - 1;
@@ -335,7 +335,7 @@ const Transactions = () => {
           }
 
           const parseAmount = (val: string) => {
-            const cleaned = String(val).replace(/[\s,\u00A0]/g, "").replace(/[^0-9.\-]/g, "");
+            const cleaned = String(val).replace(/[\s,\u00A0]/g, "").replace(/[^0-9.-]/g, "");
             const n = Number.parseFloat(cleaned);
             return Number.isFinite(n) ? n : 0;
           };

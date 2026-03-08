@@ -63,7 +63,7 @@ export function useBudgets() {
 
         const { data: inserted } = await supabase
           .from('budgets')
-          .insert(toInsert as any)
+          .insert(toInsert as unknown as Record<string, unknown>[])
           .select();
 
         if (inserted) {
@@ -143,7 +143,7 @@ export function useBudgets() {
       
       const { data, error } = await supabase
         .from('budgets')
-        .insert(insertData as any)
+        .insert(insertData as unknown as Record<string, unknown>)
         .select()
         .single();
 
@@ -179,7 +179,7 @@ export function useBudgets() {
 
       const { error } = await supabase
         .from('budgets')
-        // @ts-ignore - Supabase types don't infer properly when not configured
+        // @ts-expect-error - Supabase types don't infer properly when not configured
         .update(dbUpdates)
         .eq('id', id)
         .eq('user_id', user.id);
