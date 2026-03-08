@@ -9,10 +9,6 @@ pipeline {
         buildDiscarder(logRotator(numToKeepStr: '20', artifactNumToKeepStr: '10'))
     }
 
-    tools {
-        nodejs 'NodeJS-20'
-    }
-
     environment {
         CI = 'true'
         NODE_ENV = 'production'
