@@ -9,6 +9,10 @@ pipeline {
         buildDiscarder(logRotator(numToKeepStr: '20', artifactNumToKeepStr: '10'))
     }
 
+    tools {
+        nodejs 'NodeJS-20'
+    }
+
     environment {
         CI = 'true'
         NODE_ENV = 'production'
@@ -29,14 +33,11 @@ pipeline {
             steps {
                 sh '''
                     set -eu
-                    docker run --rm -v "$WORKSPACE:/workspace" -w /workspace node:20-alpine sh -lc '
-                        set -eu
-                        if [ -f package-lock.json ]; then
-                            npm ci --no-audit --no-fund
-                        else
-                            npm install --no-audit --no-fund
-                        fi
-                    '
+                    if [ -f package-lock.json ]; then
+                        npm ci --no-audit --no-fund
+                    else
+                        npm install --no-audit --no-fund
+                    fi
                 '''
             }
         }
@@ -45,10 +46,7 @@ pipeline {
             steps {
                 sh '''
                     set -eu
-                    docker run --rm -v "$WORKSPACE:/workspace" -w /workspace node:20-alpine sh -lc '
-                        set -eu
-                        npm run lint
-                    '
+                    npm run lint
                 '''
             }
         }
@@ -66,28 +64,16 @@ pipeline {
                         ]) {
                             sh '''
                                 set -eu
-                                docker run --rm \
-                                    -e VITE_SUPABASE_URL="$VITE_SUPABASE_URL" \
-                                    -e VITE_SUPABASE_ANON_KEY="$VITE_SUPABASE_ANON_KEY" \
-                                    -e VITE_OPENROUTER_API_KEY="$VITE_OPENROUTER_API_KEY" \
-                                    -e VITE_OPENROUTER_API_KEY_2="$VITE_OPENROUTER_API_KEY_2" \
-                                    -e VITE_OPENROUTER_API_KEY_3="$VITE_OPENROUTER_API_KEY_3" \
-                                    -v "$WORKSPACE:/workspace" -w /workspace node:20-alpine sh -lc '
-                                    set -eu
-                                    npm run build
-                                '
-                                test -d "$WORKSPACE/dist"
+                                npm run build
+                                test -d dist
                             '''
                         }
                     } catch (Exception ignored) {
                         echo 'Some optional Vite credentials are not configured. Building without injected secret build args.'
                         sh '''
                             set -eu
-                            docker run --rm -v "$WORKSPACE:/workspace" -w /workspace node:20-alpine sh -lc '
-                                set -eu
-                                npm run build
-                            '
-                            test -d "$WORKSPACE/dist"
+                            npm run build
+                            test -d dist
                         '''
                     }
                 }
@@ -108,7 +94,7 @@ pipeline {
                     set -eu
                     mkdir -p "$STATIC_DEPLOY_DIR"
                     find "$STATIC_DEPLOY_DIR" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
-                    cp -a "$WORKSPACE/dist/." "$STATIC_DEPLOY_DIR/"
+                    cp -a dist/. "$STATIC_DEPLOY_DIR/"
 
                     if [ -n "$RELOAD_COMMAND" ]; then
                         $RELOAD_COMMAND
