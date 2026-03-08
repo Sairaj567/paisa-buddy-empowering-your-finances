@@ -25,11 +25,20 @@ pipeline {
             steps {
                 sh '''
                     set -eu
-                    if command -v node >/dev/null 2>&1; then
+                    if command -v node >/dev/null 2>&1 && node --version >/dev/null 2>&1; then
                         echo "Node.js already installed: $(node --version)"
                     else
                         echo "Installing Node.js 20..."
-                        curl -fsSL https://nodejs.org/dist/v20.18.3/node-v20.18.3-linux-x64.tar.gz -o /tmp/node.tar.gz
+                        rm -rf "$NODE_HOME"
+                        ARCH=$(uname -m)
+                        case "$ARCH" in
+                            aarch64) NODE_ARCH="arm64" ;;
+                            x86_64)  NODE_ARCH="x64" ;;
+                            *)       echo "Unsupported architecture: $ARCH"; exit 1 ;;
+                        esac
+                        NODE_URL="https://nodejs.org/dist/v20.18.3/node-v20.18.3-linux-${NODE_ARCH}.tar.gz"
+                        echo "Downloading $NODE_URL"
+                        curl -fsSL "$NODE_URL" -o /tmp/node.tar.gz
                         mkdir -p "$NODE_HOME"
                         tar -xzf /tmp/node.tar.gz -C "$NODE_HOME" --strip-components=1
                         rm -f /tmp/node.tar.gz
