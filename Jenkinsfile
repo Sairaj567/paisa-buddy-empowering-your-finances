@@ -109,7 +109,6 @@ pipeline {
         stage('Docker Build & Deploy') {
             steps {
                 script {
-                    def buildArgs = ''
                     def credentialIds = [
                         'VITE_SUPABASE_URL',
                         'VITE_SUPABASE_ANON_KEY',
@@ -129,34 +128,35 @@ pipeline {
 
                     if (credentialBindings.size() > 0) {
                         withCredentials(credentialBindings) {
-                            buildArgs = credentialIds.collect { id ->
-                                def val = env."${id}"
-                                val ? "--build-arg ${id}=${val}" : ''
-                            }.findAll { it }.join(' ')
-
-                            sh """
+                            sh '''
                                 set -eu
-                                docker build ${buildArgs} -t ${DOCKER_IMAGE}:${DOCKER_TAG} -t ${DOCKER_IMAGE}:latest .
-                            """
+                                BUILD_ARGS=""
+                                for VAR in VITE_SUPABASE_URL VITE_SUPABASE_ANON_KEY VITE_OPENROUTER_API_KEY VITE_OPENROUTER_API_KEY_2 VITE_OPENROUTER_API_KEY_3; do
+                                    eval VAL=\${$VAR:-}
+                                    if [ -n "$VAL" ]; then
+                                        BUILD_ARGS="$BUILD_ARGS --build-arg $VAR=$VAL"
+                                    fi
+                                done
+                                docker build $BUILD_ARGS -t $DOCKER_IMAGE:$DOCKER_TAG -t $DOCKER_IMAGE:latest .
+                            '''
                         }
                     } else {
-                        sh """
+                        sh '''
                             set -eu
-                            docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} -t ${DOCKER_IMAGE}:latest .
-                        """
+                            docker build -t $DOCKER_IMAGE:$DOCKER_TAG -t $DOCKER_IMAGE:latest .
+                        '''
                     }
 
-                    // Stop any existing container, then run the new one
-                    sh """
+                    sh '''
                         set -eu
-                        docker stop ${APP_NAME} 2>/dev/null || true
-                        docker rm ${APP_NAME} 2>/dev/null || true
+                        docker stop $APP_NAME 2>/dev/null || true
+                        docker rm $APP_NAME 2>/dev/null || true
                         docker run -d \
-                            --name ${APP_NAME} \
+                            --name $APP_NAME \
                             --restart unless-stopped \
-                            -p ${HOST_PORT}:80 \
-                            ${DOCKER_IMAGE}:${DOCKER_TAG}
-                    """
+                            -p $HOST_PORT:80 \
+                            $DOCKER_IMAGE:$DOCKER_TAG
+                    '''
                 }
             }
         }
