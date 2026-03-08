@@ -113,14 +113,6 @@ pipeline {
         }
 
         stage('Deploy') {
-            when {
-                allOf {
-                    expression {
-                        def branch = env.BRANCH_NAME ?: env.GIT_BRANCH ?: ''
-                        return branch == env.DEPLOY_BRANCH || branch.endsWith("/${env.DEPLOY_BRANCH}")
-                    }
-                }
-            }
             steps {
                 sh '''
                     set -eu
