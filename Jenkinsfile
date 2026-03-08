@@ -19,7 +19,7 @@ pipeline {
         DEPLOY_BRANCH = 'main'
         APP_NAME = 'paisa-buddy'
         STATIC_DEPLOY_DIR = '/var/www/paisa-buddy'
-        RELOAD_COMMAND = 'sudo systemctl reload nginx'
+        RELOAD_COMMAND = 'systemctl reload nginx'
         NODE_HOME = "${JENKINS_HOME}/tools/node"
         PATH = "${NODE_HOME}/bin:${env.PATH}"
     }
@@ -116,10 +116,10 @@ pipeline {
             steps {
                 sh '''
                     set -eu
-                    sudo rm -rf "$STATIC_DEPLOY_DIR"/*
-                    sudo cp -a dist/. "$STATIC_DEPLOY_DIR/"
-                    sudo chown -R www-data:www-data "$STATIC_DEPLOY_DIR"
-                
+                    rm -rf "$STATIC_DEPLOY_DIR"/*
+                    cp -a dist/. "$STATIC_DEPLOY_DIR/"
+                    chown -R www-data:www-data "$STATIC_DEPLOY_DIR"
+
                     if [ -n "$RELOAD_COMMAND" ]; then
                         $RELOAD_COMMAND
                     fi
