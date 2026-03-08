@@ -1,5 +1,10 @@
 pipeline {
-    agent any
+    agent {
+        node {
+            label ''
+            customWorkspace "${JENKINS_HOME}/workspace/paisa-buddy"
+        }
+    }
 
     options {
         skipDefaultCheckout(true)
