@@ -16,21 +16,14 @@ RUN if [ -f package-lock.json ]; then \
 # Copy source code
 COPY . .
 
-# Build arguments for environment variables
-ARG VITE_SUPABASE_URL
-ARG VITE_SUPABASE_ANON_KEY
-ARG VITE_OPENROUTER_API_KEY
-ARG VITE_OPENROUTER_API_KEY_2
-ARG VITE_OPENROUTER_API_KEY_3
+# Build arguments for environment variables (ARG-only, no ENV to avoid leaking secrets into image layers)
+ARG VITE_SUPABASE_URL=
+ARG VITE_SUPABASE_ANON_KEY=
+ARG VITE_OPENROUTER_API_KEY=
+ARG VITE_OPENROUTER_API_KEY_2=
+ARG VITE_OPENROUTER_API_KEY_3=
 
-# Set environment variables for build
-ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
-ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
-ENV VITE_OPENROUTER_API_KEY=$VITE_OPENROUTER_API_KEY
-ENV VITE_OPENROUTER_API_KEY_2=$VITE_OPENROUTER_API_KEY_2
-ENV VITE_OPENROUTER_API_KEY_3=$VITE_OPENROUTER_API_KEY_3
-
-# Build the app
+# Build the app (ARG values are available as env vars during RUN)
 RUN npm run build
 
 # Production stage
