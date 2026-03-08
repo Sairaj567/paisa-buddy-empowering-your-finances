@@ -29,10 +29,10 @@ pipeline {
                         echo "Node.js already installed: $(node --version)"
                     else
                         echo "Installing Node.js 20..."
-                        curl -fsSL https://nodejs.org/dist/v20.18.3/node-v20.18.3-linux-x64.tar.xz -o /tmp/node.tar.xz
+                        curl -fsSL https://nodejs.org/dist/v20.18.3/node-v20.18.3-linux-x64.tar.gz -o /tmp/node.tar.gz
                         mkdir -p "$NODE_HOME"
-                        tar -xJf /tmp/node.tar.xz -C "$NODE_HOME" --strip-components=1
-                        rm -f /tmp/node.tar.xz
+                        tar -xzf /tmp/node.tar.gz -C "$NODE_HOME" --strip-components=1
+                        rm -f /tmp/node.tar.gz
                         echo "Installed: $(node --version)"
                     fi
                 '''
