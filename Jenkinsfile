@@ -107,12 +107,6 @@ pipeline {
         }
 
         stage('Docker Build & Deploy') {
-            when {
-                anyOf {
-                    branch 'main'
-                    branch 'master'
-                }
-            }
             steps {
                 script {
                     def buildArgs = ''
