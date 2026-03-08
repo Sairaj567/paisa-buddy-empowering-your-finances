@@ -1,10 +1,5 @@
 pipeline {
-    agent {
-        node {
-            label ''
-            customWorkspace "${JENKINS_HOME}/workspace/paisa-buddy"
-        }
-    }
+    agent any
 
     options {
         skipDefaultCheckout(true)
@@ -16,45 +11,33 @@ pipeline {
 
     environment {
         CI = 'true'
-        DEPLOY_BRANCH = 'main'
         APP_NAME = 'paisa-buddy'
-        STATIC_DEPLOY_DIR = '/var/www/paisa-buddy'
-        RELOAD_COMMAND = 'systemctl reload nginx'
-        NODE_HOME = "${JENKINS_HOME}/tools/node"
-        PATH = "${NODE_HOME}/bin:${env.PATH}"
+        DOCKER_IMAGE = 'paisa-buddy'
+        DOCKER_TAG = "${env.BUILD_NUMBER}"
+        CONTAINER_PORT = '3000'
+        HOST_PORT = '80'
     }
 
     stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
         stage('Setup Node.js') {
             steps {
                 sh '''
                     set -eu
-                    if command -v node >/dev/null 2>&1 && node --version >/dev/null 2>&1; then
-                        echo "Node.js already installed: $(node --version)"
+                    if command -v node >/dev/null 2>&1; then
+                        echo "Node.js found: $(node --version)"
                     else
-                        echo "Installing Node.js 20..."
-                        rm -rf "$NODE_HOME"
-                        ARCH=$(uname -m)
-                        case "$ARCH" in
-                            aarch64) NODE_ARCH="arm64" ;;
-                            x86_64)  NODE_ARCH="x64" ;;
-                            *)       echo "Unsupported architecture: $ARCH"; exit 1 ;;
-                        esac
-                        NODE_URL="https://nodejs.org/dist/v20.18.3/node-v20.18.3-linux-${NODE_ARCH}.tar.gz"
-                        echo "Downloading $NODE_URL"
-                        curl -fsSL "$NODE_URL" -o /tmp/node.tar.gz
-                        mkdir -p "$NODE_HOME"
-                        tar -xzf /tmp/node.tar.gz -C "$NODE_HOME" --strip-components=1
-                        rm -f /tmp/node.tar.gz
-                        echo "Installed: $(node --version)"
+                        echo "ERROR: Node.js is not installed on this agent."
+                        echo "Install the NodeJS plugin in Jenkins and configure Node 20,"
+                        echo "or install Node.js directly on the agent."
+                        exit 1
                     fi
                 '''
-            }
-        }
-
-        stage('Checkout') {
-            steps {
-                checkout scm
             }
         }
 
@@ -73,35 +56,40 @@ pipeline {
 
         stage('Lint') {
             steps {
-                sh '''
-                    set -eu
-                    npm run lint
-                '''
+                sh 'npm run lint'
             }
         }
 
         stage('Build') {
-            environment {
-                NODE_ENV = 'production'
-            }
             steps {
                 script {
-                    try {
-                        withCredentials([
-                            string(credentialsId: 'VITE_SUPABASE_URL', variable: 'VITE_SUPABASE_URL'),
-                            string(credentialsId: 'VITE_SUPABASE_ANON_KEY', variable: 'VITE_SUPABASE_ANON_KEY'),
-                            string(credentialsId: 'VITE_OPENROUTER_API_KEY', variable: 'VITE_OPENROUTER_API_KEY'),
-                            string(credentialsId: 'VITE_OPENROUTER_API_KEY_2', variable: 'VITE_OPENROUTER_API_KEY_2'),
-                            string(credentialsId: 'VITE_OPENROUTER_API_KEY_3', variable: 'VITE_OPENROUTER_API_KEY_3')
-                        ]) {
+                    def credentialBindings = []
+                    def credentialIds = [
+                        'VITE_SUPABASE_URL',
+                        'VITE_SUPABASE_ANON_KEY',
+                        'VITE_OPENROUTER_API_KEY',
+                        'VITE_OPENROUTER_API_KEY_2',
+                        'VITE_OPENROUTER_API_KEY_3'
+                    ]
+
+                    credentialIds.each { id ->
+                        try {
+                            credentialBindings.add(string(credentialsId: id, variable: id))
+                        } catch (Exception ignored) {
+                            echo "Credential '${id}' not found — skipping."
+                        }
+                    }
+
+                    if (credentialBindings.size() > 0) {
+                        withCredentials(credentialBindings) {
                             sh '''
                                 set -eu
                                 npm run build
                                 test -d dist
                             '''
                         }
-                    } catch (Exception ignored) {
-                        echo 'Some optional Vite credentials are not configured. Building without injected secret build args.'
+                    } else {
+                        echo 'No optional credentials configured. Building without injected secrets.'
                         sh '''
                             set -eu
                             npm run build
@@ -112,31 +100,83 @@ pipeline {
             }
         }
 
-        stage('Deploy') {
+        stage('Archive Artifacts') {
             steps {
-                sh '''
-                    set -eu
-                    rm -rf "$STATIC_DEPLOY_DIR"/*
-                    cp -a dist/. "$STATIC_DEPLOY_DIR/"
-                    chown -R www-data:www-data "$STATIC_DEPLOY_DIR"
+                archiveArtifacts artifacts: 'dist/**', fingerprint: true
+            }
+        }
 
-                    if [ -n "$RELOAD_COMMAND" ]; then
-                        $RELOAD_COMMAND
-                    fi
-                '''
+        stage('Docker Build & Deploy') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'master'
+                }
+            }
+            steps {
+                script {
+                    def buildArgs = ''
+                    def credentialIds = [
+                        'VITE_SUPABASE_URL',
+                        'VITE_SUPABASE_ANON_KEY',
+                        'VITE_OPENROUTER_API_KEY',
+                        'VITE_OPENROUTER_API_KEY_2',
+                        'VITE_OPENROUTER_API_KEY_3'
+                    ]
+
+                    def credentialBindings = []
+                    credentialIds.each { id ->
+                        try {
+                            credentialBindings.add(string(credentialsId: id, variable: id))
+                        } catch (Exception ignored) {
+                            // credential not set — skip
+                        }
+                    }
+
+                    if (credentialBindings.size() > 0) {
+                        withCredentials(credentialBindings) {
+                            buildArgs = credentialIds.collect { id ->
+                                def val = env."${id}"
+                                val ? "--build-arg ${id}=${val}" : ''
+                            }.findAll { it }.join(' ')
+
+                            sh """
+                                set -eu
+                                docker build ${buildArgs} -t ${DOCKER_IMAGE}:${DOCKER_TAG} -t ${DOCKER_IMAGE}:latest .
+                            """
+                        }
+                    } else {
+                        sh """
+                            set -eu
+                            docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} -t ${DOCKER_IMAGE}:latest .
+                        """
+                    }
+
+                    // Stop any existing container, then run the new one
+                    sh """
+                        set -eu
+                        docker stop ${APP_NAME} 2>/dev/null || true
+                        docker rm ${APP_NAME} 2>/dev/null || true
+                        docker run -d \
+                            --name ${APP_NAME} \
+                            --restart unless-stopped \
+                            -p ${HOST_PORT}:80 \
+                            ${DOCKER_IMAGE}:${DOCKER_TAG}
+                    """
+                }
             }
         }
     }
 
     post {
         success {
-            echo '✅ Pipeline completed successfully.'
+            echo 'Pipeline completed successfully.'
         }
         failure {
-            echo '❌ Pipeline failed. Check the stage logs for details.'
+            echo 'Pipeline failed. Check the stage logs for details.'
         }
         always {
-            deleteDir()
+            cleanWs()
         }
     }
 }
