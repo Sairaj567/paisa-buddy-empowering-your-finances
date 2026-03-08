@@ -16,7 +16,6 @@ pipeline {
 
     environment {
         CI = 'true'
-        NODE_ENV = 'production'
         DEPLOY_BRANCH = 'main'
         APP_NAME = 'paisa-buddy'
         STATIC_DEPLOY_DIR = '/var/www/paisa-buddy'
@@ -82,6 +81,9 @@ pipeline {
         }
 
         stage('Build') {
+            environment {
+                NODE_ENV = 'production'
+            }
             steps {
                 script {
                     try {
