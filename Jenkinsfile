@@ -116,10 +116,10 @@ pipeline {
             steps {
                 sh '''
                     set -eu
-                    mkdir -p "$STATIC_DEPLOY_DIR"
-                    find "$STATIC_DEPLOY_DIR" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
-                    cp -a dist/. "$STATIC_DEPLOY_DIR/"
-
+                    sudo rm -rf "$STATIC_DEPLOY_DIR"/*
+                    sudo cp -a dist/. "$STATIC_DEPLOY_DIR/"
+                    sudo chown -R www-data:www-data "$STATIC_DEPLOY_DIR"
+                
                     if [ -n "$RELOAD_COMMAND" ]; then
                         $RELOAD_COMMAND
                     fi
