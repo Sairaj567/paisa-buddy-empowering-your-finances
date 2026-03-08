@@ -130,14 +130,14 @@ pipeline {
                         withCredentials(credentialBindings) {
                             sh '''
                                 set -eu
-                                BUILD_ARGS=""
-                                for VAR in VITE_SUPABASE_URL VITE_SUPABASE_ANON_KEY VITE_OPENROUTER_API_KEY VITE_OPENROUTER_API_KEY_2 VITE_OPENROUTER_API_KEY_3; do
-                                    eval VAL=\${$VAR:-}
-                                    if [ -n "$VAL" ]; then
-                                        BUILD_ARGS="$BUILD_ARGS --build-arg $VAR=$VAL"
-                                    fi
-                                done
-                                docker build $BUILD_ARGS -t $DOCKER_IMAGE:$DOCKER_TAG -t $DOCKER_IMAGE:latest .
+                                docker build \
+                                    --build-arg VITE_SUPABASE_URL="$VITE_SUPABASE_URL" \
+                                    --build-arg VITE_SUPABASE_ANON_KEY="$VITE_SUPABASE_ANON_KEY" \
+                                    --build-arg VITE_OPENROUTER_API_KEY="$VITE_OPENROUTER_API_KEY" \
+                                    --build-arg VITE_OPENROUTER_API_KEY_2="$VITE_OPENROUTER_API_KEY_2" \
+                                    --build-arg VITE_OPENROUTER_API_KEY_3="$VITE_OPENROUTER_API_KEY_3" \
+                                    -t "$DOCKER_IMAGE:$DOCKER_TAG" \
+                                    -t "$DOCKER_IMAGE:latest" .
                             '''
                         }
                     } else {
