@@ -1,13 +1,7 @@
 pipeline {
     agent any
 
-    tools {
-        // Configure this tool in Jenkins Global Tool Configuration.
-        nodejs 'Node20'
-    }
-
     options {
-        ansiColor('xterm')
         timestamps()
         disableConcurrentBuilds()
         timeout(time: 30, unit: 'MINUTES')
@@ -29,6 +23,7 @@ pipeline {
         CI = 'true'
         NODE_ENV = 'production'
         DOCKER_BUILDKIT = '1'
+        NODE_DOCKER_IMAGE = 'node:20-alpine'
     }
 
     stages {
@@ -42,34 +37,32 @@ pipeline {
             steps {
                 sh '''
                     set -eu
-                    node --version
-                    npm --version
                     docker --version
                 '''
             }
         }
 
-        stage('Install Dependencies') {
+                stage('Lint') {
             steps {
                 sh '''
                     set -eu
 
-                    if [ -f package-lock.json ]; then
-                      echo "Using npm ci (package-lock.json detected)"
-                      npm ci --no-audit --no-fund
-                    else
-                      echo "package-lock.json not found; falling back to npm install"
-                      npm install --no-audit --no-fund
-                    fi
-                '''
-            }
-        }
-
-        stage('Lint') {
-            steps {
-                sh '''
-                    set -eu
-                    npm run lint
+                                        docker run --rm \
+                                            -u "$(id -u):$(id -g)" \
+                                            -v "$PWD:/workspace" \
+                                            -w /workspace \
+                                            "$NODE_DOCKER_IMAGE" \
+                                            sh -lc '
+                                                set -eu
+                                                if [ -f package-lock.json ]; then
+                                                    echo "Using npm ci (package-lock.json detected)"
+                                                    npm ci --no-audit --no-fund
+                                                else
+                                                    echo "package-lock.json not found; falling back to npm install"
+                                                    npm install --no-audit --no-fund
+                                                fi
+                                                npm run lint
+                                            '
                 '''
             }
         }
