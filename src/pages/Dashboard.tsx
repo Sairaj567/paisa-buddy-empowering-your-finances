@@ -36,6 +36,7 @@ import {
 } from "recharts";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
+import { parseFlexibleDate } from "@/lib/date";
 
 type DateRange = "1W" | "1M" | "3M" | "6M" | "1Y" | "5Y" | "ALL";
 
@@ -70,7 +71,7 @@ const getDateRangeStart = (range: DateRange): Date | null => {
 };
 
 const Dashboard = () => {
-  const { transactions, isLoading: transactionsLoading, totals } = useTransactions();
+  const { transactions, isLoading: transactionsLoading } = useTransactions();
   const { goals, isLoading: goalsLoading } = useGoals();
   const { budgets } = useBudgets();
   const { patterns, monthlyRecurringTotal, upcomingThisWeek } = useRecurringTransactions(transactions);
@@ -79,17 +80,14 @@ const Dashboard = () => {
   const [dateRange, setDateRange] = useState<DateRange>("1M");
   const isLoading = transactionsLoading || goalsLoading;
 
-  const parseDate = (value: string) => {
-    const d = new Date(value);
-    if (Number.isNaN(d.getTime())) return new Date();
-    return d;
-  };
-
   // Filter transactions by date range
   const filteredTransactions = useMemo(() => {
     const rangeStart = getDateRangeStart(dateRange);
     if (!rangeStart) return transactions;
-    return transactions.filter((tx) => parseDate(tx.date) >= rangeStart);
+    return transactions.filter((tx) => {
+      const parsed = parseFlexibleDate(tx.date);
+      return parsed ? parsed >= rangeStart : false;
+    });
   }, [transactions, dateRange]);
 
   // Calculate totals for filtered period
@@ -103,14 +101,19 @@ const Dashboard = () => {
 
   const recentTransactions = useMemo(() => {
     return [...filteredTransactions]
-      .sort((a, b) => parseDate(b.date).getTime() - parseDate(a.date).getTime())
+      .sort((a, b) => {
+        const dateA = parseFlexibleDate(a.date)?.getTime() ?? 0;
+        const dateB = parseFlexibleDate(b.date)?.getTime() ?? 0;
+        return dateB - dateA;
+      })
       .slice(0, 5);
   }, [filteredTransactions]);
 
   const spendingData = useMemo(() => {
     const grouped: Record<string, { name: string; rawDate: Date; income: number; expense: number }> = {};
     filteredTransactions.forEach((tx) => {
-      const txDate = parseDate(tx.date);
+      const txDate = parseFlexibleDate(tx.date);
+      if (!txDate) return;
       // Use different grouping based on date range
       let dateKey: string;
       if (dateRange === "1W") {

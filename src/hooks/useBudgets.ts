@@ -4,6 +4,7 @@ import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 import type { Budget } from "@/types";
 import type { Database } from "@/lib/database.types";
 import { useTransactions } from "./useTransactions";
+import { parseFlexibleDate } from "@/lib/date";
 
 type DbBudget = Database['public']['Tables']['budgets']['Row'];
 type DbBudgetInsert = Database['public']['Tables']['budgets']['Insert'];
@@ -113,7 +114,8 @@ export function useBudgets() {
 
     // Get this month's transactions
     const thisMonthTransactions = transactions.filter(t => {
-      const date = new Date(t.date);
+      const date = parseFlexibleDate(t.date);
+      if (!date) return false;
       return date.getMonth() === currentMonth && 
              date.getFullYear() === currentYear &&
              t.amount < 0;

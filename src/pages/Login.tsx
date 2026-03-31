@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,7 +14,9 @@ const Login = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const { signIn, signInWithGoogle, isSupabaseEnabled } = useAuth();
+  const redirectTo = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname || "/dashboard";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,7 +36,7 @@ const Login = () => {
     }
     
     toast.success("Signed in successfully!");
-    navigate("/dashboard");
+    navigate(redirectTo, { replace: true });
     setIsSubmitting(false);
   };
 
@@ -146,7 +148,7 @@ const Login = () => {
                   return;
                 }
                 setIsGoogleLoading(true);
-                const { error } = await signInWithGoogle();
+                const { error } = await signInWithGoogle(redirectTo);
                 if (error) {
                   toast.error(error.message);
                   setIsGoogleLoading(false);

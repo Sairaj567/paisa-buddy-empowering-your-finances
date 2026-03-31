@@ -12,6 +12,7 @@ import {
   type FinancialSnapshot,
   type AIInsight,
 } from "@/lib/ai-service";
+import { parseFlexibleDate } from "@/lib/date";
 import { 
   Sparkles,
   TrendingUp,
@@ -69,19 +70,6 @@ const quickActions = [
   { label: "View Settings", icon: PiggyBank, href: "/settings" },
 ];
 
-const parseDate = (raw: string) => {
-  if (!raw) return new Date();
-  // Support dd-mm-yyyy and yyyy-mm-dd
-  const parts = raw.includes("-") ? raw.split("-") : raw.split("/");
-  if (parts.length === 3 && parts[0].length === 2 && parts[2].length === 4) {
-    const [dd, mm, yyyy] = parts;
-    const d = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
-    if (!Number.isNaN(d.getTime())) return d;
-  }
-  const fallback = new Date(raw);
-  return Number.isNaN(fallback.getTime()) ? new Date() : fallback;
-};
-
 const formatCurrency = (value: number) => `₹${Math.round(value).toLocaleString('en-IN')}`;
 
 const Insights = () => {
@@ -99,7 +87,10 @@ const Insights = () => {
   const filteredTransactions = useMemo(() => {
     const rangeStart = getDateRangeStart(dateRange);
     if (!rangeStart) return transactions;
-    return transactions.filter((tx) => parseDate(tx.date) >= rangeStart);
+    return transactions.filter((tx) => {
+      const parsed = parseFlexibleDate(tx.date);
+      return parsed ? parsed >= rangeStart : false;
+    });
   }, [transactions, dateRange]);
 
   const handleRefresh = () => {
@@ -119,7 +110,8 @@ const Insights = () => {
     const buckets: Record<string, number> = { Mon: 0, Tue: 0, Wed: 0, Thu: 0, Fri: 0, Sat: 0, Sun: 0 };
     filteredTransactions.forEach((t) => {
       if (t.amount < 0) {
-        const d = parseDate(t.date);
+        const d = parseFlexibleDate(t.date);
+        if (!d) return;
         const day = d.toLocaleDateString("en-US", { weekday: "short" });
         buckets[day] = (buckets[day] || 0) + Math.abs(t.amount);
       }
@@ -130,7 +122,8 @@ const Insights = () => {
   const monthlyNet = useMemo(() => {
     const grouped: Record<string, { month: string; actual: number; projected?: number | null }> = {};
     filteredTransactions.forEach((t) => {
-      const d = parseDate(t.date);
+      const d = parseFlexibleDate(t.date);
+      if (!d) return;
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
       if (!grouped[key]) grouped[key] = { month: key, actual: 0, projected: null };
       grouped[key].actual += t.amount;

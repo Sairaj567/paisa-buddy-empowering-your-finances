@@ -11,11 +11,6 @@ pipeline {
 
     environment {
         CI = 'true'
-        APP_NAME = 'paisa-buddy'
-        DOCKER_IMAGE = 'paisa-buddy'
-        DOCKER_TAG = "${env.BUILD_NUMBER}"
-        CONTAINER_PORT = '3000'
-        HOST_PORT = '3000'
     }
 
     stages {
@@ -106,60 +101,6 @@ pipeline {
             }
         }
 
-        stage('Docker Build & Deploy') {
-            steps {
-                script {
-                    def credentialIds = [
-                        'VITE_SUPABASE_URL',
-                        'VITE_SUPABASE_ANON_KEY',
-                        'VITE_OPENROUTER_API_KEY',
-                        'VITE_OPENROUTER_API_KEY_2',
-                        'VITE_OPENROUTER_API_KEY_3'
-                    ]
-
-                    def credentialBindings = []
-                    credentialIds.each { id ->
-                        try {
-                            credentialBindings.add(string(credentialsId: id, variable: id))
-                        } catch (Exception ignored) {
-                            // credential not set — skip
-                        }
-                    }
-
-                    if (credentialBindings.size() > 0) {
-                        withCredentials(credentialBindings) {
-                            sh '''
-                                set -eu
-                                docker build \
-                                    --build-arg VITE_SUPABASE_URL="$VITE_SUPABASE_URL" \
-                                    --build-arg VITE_SUPABASE_ANON_KEY="$VITE_SUPABASE_ANON_KEY" \
-                                    --build-arg VITE_OPENROUTER_API_KEY="$VITE_OPENROUTER_API_KEY" \
-                                    --build-arg VITE_OPENROUTER_API_KEY_2="$VITE_OPENROUTER_API_KEY_2" \
-                                    --build-arg VITE_OPENROUTER_API_KEY_3="$VITE_OPENROUTER_API_KEY_3" \
-                                    -t "$DOCKER_IMAGE:$DOCKER_TAG" \
-                                    -t "$DOCKER_IMAGE:latest" .
-                            '''
-                        }
-                    } else {
-                        sh '''
-                            set -eu
-                            docker build -t $DOCKER_IMAGE:$DOCKER_TAG -t $DOCKER_IMAGE:latest .
-                        '''
-                    }
-
-                    sh '''
-                        set -eu
-                        docker stop $APP_NAME 2>/dev/null || true
-                        docker rm $APP_NAME 2>/dev/null || true
-                        docker run -d \
-                            --name $APP_NAME \
-                            --restart unless-stopped \
-                            -p $HOST_PORT:80 \
-                            $DOCKER_IMAGE:$DOCKER_TAG
-                    '''
-                }
-            }
-        }
     }
 
     post {

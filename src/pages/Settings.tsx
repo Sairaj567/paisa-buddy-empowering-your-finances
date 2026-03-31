@@ -51,7 +51,7 @@ const DATE_FORMAT_OPTIONS = [
 ];
 
 const Settings = () => {
-  const { user, login, logout } = useAuth();
+  const { user, updateProfile } = useAuth();
   const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
   const [profileName, setProfileName] = useState(user?.name || "");
   const [isSaving, setIsSaving] = useState(false);
@@ -70,21 +70,26 @@ const Settings = () => {
     setProfileName(user?.name || "");
   }, [settingsKey, user]);
 
-  const handleSaveSettings = () => {
+  const handleSaveSettings = async () => {
     setIsSaving(true);
-    
-    // Simulate save delay
-    setTimeout(() => {
+
+    try {
       localStorage.setItem(settingsKey, JSON.stringify(settings));
-      
+
       // Update user name if changed
-      if (user && profileName !== user.name) {
-        login({ ...user, name: profileName });
+      if (user && profileName.trim() && profileName !== user.name) {
+        const { error } = await updateProfile({ name: profileName.trim() });
+        if (error) {
+          toast.error(error.message || "Failed to update profile name.");
+          setIsSaving(false);
+          return;
+        }
       }
-      
-      setIsSaving(false);
+
       toast.success("Settings saved successfully!");
-    }, 500);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleCurrencyChange = (value: string) => {

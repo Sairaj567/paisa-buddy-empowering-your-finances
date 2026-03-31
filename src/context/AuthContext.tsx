@@ -1,6 +1,5 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useContext, useEffect, useState } from "react";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
-import type { User, Session } from "@supabase/supabase-js";
 
 export type AuthUser = { 
   id: string;
@@ -14,8 +13,9 @@ interface AuthContextValue {
   isSupabaseEnabled: boolean;
   signUp: (email: string, password: string, name?: string) => Promise<{ error: Error | null }>;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
-  signInWithGoogle: () => Promise<{ error: Error | null }>;
+  signInWithGoogle: (redirectPath?: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
+  updateProfile: (updates: { name?: string }) => Promise<{ error: Error | null }>;
   // Legacy methods for localStorage fallback
   login: (user: AuthUser) => void;
   logout: () => Promise<void>;
@@ -124,15 +124,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   // Google OAuth sign in
-  const signInWithGoogle = async () => {
+  const signInWithGoogle = async (redirectPath = "/dashboard") => {
     if (!isSupabaseEnabled) {
       return { error: new Error("Google sign-in requires Supabase to be configured.") };
     }
 
+    const safeRedirectPath = redirectPath.startsWith("/") ? redirectPath : "/dashboard";
+
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}/dashboard`,
+        redirectTo: `${window.location.origin}${safeRedirectPath}`,
         queryParams: {
           access_type: 'offline',
           prompt: 'consent',
@@ -177,6 +179,33 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     localStorage.removeItem('pb-settings-guest');
   };
 
+  const updateProfile = async (updates: { name?: string }) => {
+    if (!user) {
+      return { error: new Error("No authenticated user.") };
+    }
+
+    if (isSupabaseEnabled && user.id !== "local") {
+      const { data, error } = await supabase.auth.updateUser({
+        data: {
+          ...(updates.name !== undefined ? { name: updates.name } : {}),
+        },
+      });
+
+      if (error) {
+        return { error: new Error(error.message) };
+      }
+
+      const nextName = data.user?.user_metadata?.name ?? user.name;
+      setUser((prev) => (prev ? { ...prev, name: nextName } : prev));
+      return { error: null };
+    }
+
+    const nextUser = { ...user, ...updates };
+    setUser(nextUser);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ email: nextUser.email, name: nextUser.name }));
+    return { error: null };
+  };
+
   // Legacy login method (for backward compatibility)
   const login = (nextUser: AuthUser) => {
     if (nextUser) {
@@ -190,20 +219,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     await signOut();
   };
 
-  const value = useMemo(
-    () => ({
-      user,
-      isLoading,
-      isSupabaseEnabled,
-      signUp,
-      signIn,
-      signInWithGoogle,
-      signOut,
-      login,
-      logout,
-    }),
-    [user, isLoading, isSupabaseEnabled]
-  );
+  const value = {
+    user,
+    isLoading,
+    isSupabaseEnabled,
+    signUp,
+    signIn,
+    signInWithGoogle,
+    signOut,
+    updateProfile,
+    login,
+    logout,
+  };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

@@ -35,7 +35,6 @@ export function useTransactions(options: UseTransactionsOptions = {}) {
   // Load transactions
   const loadTransactions = useCallback(async () => {
     setIsLoading(true);
-    console.log("Loading transactions...", { user, isSupabaseEnabled, storageKey });
     
     if (!user && showDemoForGuests) {
       setTransactions(DEMO_TRANSACTIONS);
@@ -51,7 +50,6 @@ export function useTransactions(options: UseTransactionsOptions = {}) {
 
     if (isSupabaseEnabled && user.id !== 'local') {
       // Load from Supabase
-      console.log("Fetching from Supabase for user:", user.id);
       const { data, error } = await supabase
         .from('transactions')
         .select('*')
@@ -61,7 +59,6 @@ export function useTransactions(options: UseTransactionsOptions = {}) {
       if (error) {
         console.error('Error loading transactions from Supabase:', error);
         // Fallback to localStorage if Supabase fails
-        console.log("Falling back to localStorage...");
         const saved = localStorage.getItem(storageKey);
         if (saved) {
           try {
@@ -73,7 +70,6 @@ export function useTransactions(options: UseTransactionsOptions = {}) {
           setTransactions([]);
         }
       } else {
-        console.log("Supabase returned:", data?.length, "transactions");
         const typedData = data as unknown as DbTransaction[];
         const supabaseTransactions = typedData?.map(t => ({
           id: t.id,
@@ -91,7 +87,6 @@ export function useTransactions(options: UseTransactionsOptions = {}) {
             try {
               const localTransactions = JSON.parse(saved);
               if (localTransactions.length > 0) {
-                console.log("Using localStorage data:", localTransactions.length, "transactions");
                 setTransactions(localTransactions);
                 setIsLoading(false);
                 return;
@@ -106,12 +101,10 @@ export function useTransactions(options: UseTransactionsOptions = {}) {
       }
     } else {
       // Fallback to localStorage
-      console.log("Loading from localStorage:", storageKey);
       const saved = localStorage.getItem(storageKey);
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
-          console.log("localStorage has:", parsed.length, "transactions");
           setTransactions(parsed);
         } catch {
           setTransactions([]);
@@ -225,14 +218,6 @@ export function useTransactions(options: UseTransactionsOptions = {}) {
   }, [storageKey, isSupabaseEnabled, user]);
 
   const importTransactions = useCallback(async (newTransactions: Transaction[]) => {
-    console.log("importTransactions called:", {
-      isSupabaseEnabled,
-      userId: user?.id,
-      userIdType: typeof user?.id,
-      isLocalUser: user?.id === 'local',
-      transactionsCount: newTransactions.length
-    });
-    
     if (isSupabaseEnabled && user?.id && user.id !== 'local') {
       const toInsert: DbTransactionInsert[] = newTransactions.map(t => ({
         user_id: user.id,
@@ -243,9 +228,6 @@ export function useTransactions(options: UseTransactionsOptions = {}) {
         type: t.type,
       }));
 
-      console.log("Inserting to Supabase:", toInsert.length, "transactions");
-      console.log("Sample insert:", toInsert[0]);
-
       const { data, error } = await supabase
         .from('transactions')
         .insert(toInsert as unknown as Record<string, unknown>[])
@@ -253,13 +235,10 @@ export function useTransactions(options: UseTransactionsOptions = {}) {
 
       if (error) {
         console.error('Error importing transactions:', error);
-        console.error('Error details:', JSON.stringify(error, null, 2));
         // Fall back to localStorage on error
         setTransactions(prev => [...newTransactions, ...prev]);
         return;
       }
-
-      console.log("Supabase insert success:", data?.length, "transactions");
 
       if (data) {
         const typedData = data as unknown as DbTransaction[];
@@ -274,7 +253,6 @@ export function useTransactions(options: UseTransactionsOptions = {}) {
         setTransactions(prev => [...imported, ...prev]);
       }
     } else {
-      console.log("Using localStorage fallback for import");
       setTransactions(prev => [...newTransactions, ...prev]);
     }
   }, [isSupabaseEnabled, user]);

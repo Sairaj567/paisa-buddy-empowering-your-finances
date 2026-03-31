@@ -1,5 +1,5 @@
 import type React from "react";
-import { useEffect, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Navbar from "@/components/layout/Navbar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,8 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/sonner";
-import { useAuth } from "@/context/AuthContext";
+import { GOAL_TYPES, type Goal, type GoalType } from "@/types";
+import { getColorForType, useGoals } from "@/hooks/useGoals";
 import { 
   Plus,
   Target,
@@ -36,71 +37,28 @@ const goalIcons: { [key: string]: React.ReactNode } = {
   "Other": <Target className="w-6 h-6" />,
 };
 
-type Goal = {
-  id: number;
-  name: string;
-  type: string;
-  current: number;
-  target: number;
-  deadline: string;
-  monthlyTarget: number;
-  color: string;
-};
-
-const goalColors: Record<string, string> = {
-  Emergency: "bg-primary",
-  Vacation: "bg-accent",
-  Education: "bg-warning",
-  Home: "bg-secondary",
-  Vehicle: "bg-muted",
-  Other: "bg-success",
-};
-
-const getColorForType = (type: string) => goalColors[type] ?? "bg-primary";
-
 const Goals = () => {
-  const { user } = useAuth();
-  const [goals, setGoals] = useState<Goal[]>([]);
+  const { goals, addGoal, importGoals, clearAll, totals } = useGoals();
   const [goalDialogOpen, setGoalDialogOpen] = useState(false);
   const [newGoal, setNewGoal] = useState({
     name: "",
-    type: "Emergency",
+    type: "Emergency" as GoalType,
     current: "",
     target: "",
     deadline: "",
     monthlyTarget: "",
   });
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const storageKey = user ? `pb-goals-${user.email}` : "pb-goals-guest";
-
-  useEffect(() => {
-    const saved = localStorage.getItem(storageKey);
-    if (saved) {
-      try {
-        setGoals(JSON.parse(saved));
-      } catch {
-        setGoals([]);
-      }
-    } else {
-      setGoals([]);
-    }
-  }, [storageKey]);
-
-  useEffect(() => {
-    if (user) {
-      localStorage.setItem(storageKey, JSON.stringify(goals));
-    }
-  }, [goals, storageKey, user]);
-
-  const totalSaved = goals.reduce((sum, g) => sum + g.current, 0);
-  const totalTarget = goals.reduce((sum, g) => sum + g.target, 0);
-  const overallProgress = totalTarget > 0 ? Math.round((totalSaved / totalTarget) * 100) : 0;
+  const totalSaved = totals.totalSaved;
+  const totalTarget = totals.totalTarget;
+  const overallProgress = totals.overallProgress;
   const hasGoals = goals.length > 0;
+  const sortedGoals = useMemo(() => [...goals].sort((a, b) => a.id - b.id), [goals]);
 
   const resetGoalForm = () =>
-    setNewGoal({ name: "", type: "Emergency", current: "", target: "", deadline: "", monthlyTarget: "" });
+    setNewGoal({ name: "", type: "Emergency" as GoalType, current: "", target: "", deadline: "", monthlyTarget: "" });
 
-  const handleAddGoal = () => {
+  const handleAddGoal = async () => {
     const targetValue = Number(newGoal.target);
     const currentValue = Number(newGoal.current) || 0;
     const monthlyValue = Number(newGoal.monthlyTarget) || 0;
@@ -110,18 +68,15 @@ const Goals = () => {
       return;
     }
 
-    const next: Goal = {
-      id: goals.length ? Math.max(...goals.map((g) => g.id)) + 1 : 1,
+    await addGoal({
       name: newGoal.name,
       type: newGoal.type,
       current: currentValue,
       target: targetValue,
       deadline: newGoal.deadline || "",
       monthlyTarget: monthlyValue,
-      color: getColorForType(newGoal.type),
-    };
+    });
 
-    setGoals((prev) => [...prev, next]);
     toast.success("Goal added");
     resetGoalForm();
     setGoalDialogOpen(false);
@@ -156,7 +111,8 @@ const Goals = () => {
 
       const normalized: Goal[] = dataLines.map((line, idx) => {
         const cells = parseLine(line);
-        const type = getValue(cells, "type", 1) || "Emergency";
+        const rawType = getValue(cells, "type", 1) || "Emergency";
+        const type = GOAL_TYPES.includes(rawType as GoalType) ? (rawType as GoalType) : "Other";
         return {
           id: idx + 1,
           name: getValue(cells, "name", 0) || `Goal ${idx + 1}`,
@@ -169,9 +125,10 @@ const Goals = () => {
         };
       });
 
-      setGoals(normalized);
+      await clearAll();
+      await importGoals(normalized);
       toast.success(`Imported ${normalized.length} goals from CSV`);
-    } catch (error) {
+    } catch {
       toast.error("Upload a CSV with columns: name, type, target, current, deadline, monthlyTarget.");
     } finally {
       event.target.value = "";
@@ -253,7 +210,7 @@ const Goals = () => {
           {/* Goals Grid */}
           {hasGoals ? (
             <div className="grid md:grid-cols-2 gap-6">
-              {goals.map((goal) => {
+              {sortedGoals.map((goal) => {
                 const percentage = goal.target > 0 ? Math.round((goal.current / goal.target) * 100) : 0;
                 const Icon = goalIcons[goal.type] || <Target className="w-6 h-6" />;
 
@@ -371,14 +328,13 @@ const Goals = () => {
                 id="goal-type"
                 className="h-10 rounded-md border border-input bg-background px-3 text-sm text-foreground"
                 value={newGoal.type}
-                onChange={(e) => setNewGoal((prev) => ({ ...prev, type: e.target.value }))}
+                onChange={(e) => setNewGoal((prev) => ({ ...prev, type: e.target.value as GoalType }))}
               >
-                <option value="Emergency">Emergency</option>
-                <option value="Vacation">Vacation</option>
-                <option value="Education">Education</option>
-                <option value="Home">Home</option>
-                <option value="Vehicle">Vehicle</option>
-                <option value="Other">Other</option>
+                {GOAL_TYPES.map((goalType) => (
+                  <option key={goalType} value={goalType}>
+                    {goalType}
+                  </option>
+                ))}
               </select>
             </div>
             <div className="grid gap-2">
