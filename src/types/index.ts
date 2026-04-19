@@ -52,6 +52,8 @@ export interface UserSettings {
   notifications: boolean;
   weeklyReport: boolean;
   budgetAlerts: boolean;
+  discordOverspendingAlerts: boolean;
+  discordWebhookUrl: string;
 }
 
 // Category constants

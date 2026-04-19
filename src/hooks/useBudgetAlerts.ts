@@ -14,6 +14,9 @@ interface UseBudgetAlertsOptions {
   enabled?: boolean;
   warningThreshold?: number;  // default 80%
   criticalThreshold?: number; // default 90%
+  discordEnabled?: boolean;
+  discordWebhookUrl?: string;
+  userEmail?: string;
 }
 
 export function useBudgetAlerts(
@@ -23,12 +26,48 @@ export function useBudgetAlerts(
   const { 
     enabled = true, 
     warningThreshold = 80,
-    criticalThreshold = 90 
+    criticalThreshold = 90,
+    discordEnabled = false,
+    discordWebhookUrl = "",
+    userEmail,
   } = options;
   
   // Track which alerts we've already shown to avoid duplicates
   const shownAlertsRef = useRef<Set<string>>(new Set());
   const isFirstRender = useRef(true);
+
+  const sendDiscordOverspendAlert = async (alert: BudgetAlert) => {
+    if (!discordEnabled) return;
+
+    const configuredWebhook = discordWebhookUrl.trim() || import.meta.env.VITE_DISCORD_WEBHOOK_URL || "";
+    if (!configuredWebhook) return;
+
+    const content = [
+      "🚨 Paisa Buddy Overspending Alert",
+      `Category: ${alert.category}`,
+      `Spent: ₹${alert.spent.toLocaleString('en-IN')}`,
+      `Limit: ₹${alert.limit.toLocaleString('en-IN')}`,
+      `Usage: ${alert.percentUsed}%`,
+      `User: ${userEmail || "guest"}`,
+      `Time: ${new Date().toLocaleString('en-IN')}`,
+    ].join("\n");
+
+    try {
+      const res = await fetch(configuredWebhook, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ content }),
+      });
+
+      if (!res.ok) {
+        console.warn("Discord webhook failed:", res.status, res.statusText);
+      }
+    } catch (err) {
+      console.warn("Discord webhook request failed:", err);
+    }
+  };
 
   const getAlerts = (): BudgetAlert[] => {
     return budgets
@@ -89,10 +128,20 @@ export function useBudgetAlerts(
       // Budget exceeded (100%+)
       if (percent >= 100 && !shownAlertsRef.current.has(`${b.category}-exceeded`)) {
         shownAlertsRef.current.add(`${b.category}-exceeded`);
+        const alertPayload: BudgetAlert = {
+          category: b.category,
+          limit: b.limit,
+          spent: b.spent,
+          percentUsed: percent,
+          type: "exceeded",
+        };
+
         toast.error(`${b.category} budget exceeded!`, {
           description: `You've spent ₹${b.spent.toLocaleString('en-IN')} of ₹${b.limit.toLocaleString('en-IN')} budget.`,
           duration: 6000,
         });
+
+        void sendDiscordOverspendAlert(alertPayload);
       }
       // Critical alert (90%+)
       else if (percent >= criticalThreshold && percent < 100 && !shownAlertsRef.current.has(`${b.category}-critical`)) {
@@ -111,7 +160,7 @@ export function useBudgetAlerts(
         });
       }
     });
-  }, [budgets, enabled, warningThreshold, criticalThreshold]);
+  }, [budgets, enabled, warningThreshold, criticalThreshold, discordEnabled, discordWebhookUrl, userEmail]);
 
   // Reset alerts at the start of a new month
   useEffect(() => {

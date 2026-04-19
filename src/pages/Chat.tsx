@@ -3,6 +3,7 @@ import Navbar from "@/components/layout/Navbar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { toast } from "@/components/ui/sonner";
 import { useTransactions } from "@/hooks/useTransactions";
 import { useGoals } from "@/hooks/useGoals";
 import { useBudgets } from "@/hooks/useBudgets";
@@ -42,6 +43,7 @@ const Chat = () => {
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const nextMessageIdRef = useRef(2);
+  const hasShownDemoAlertRef = useRef(false);
 
   const getNextMessageId = () => {
     const id = nextMessageIdRef.current;
@@ -102,6 +104,15 @@ const Chat = () => {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  useEffect(() => {
+    if (!isAIConfigured() && !hasShownDemoAlertRef.current) {
+      toast.warning("Consult is running in local guidance mode", {
+        description: "Add VITE_OPENROUTER_API_KEY in .env for live AI responses.",
+      });
+      hasShownDemoAlertRef.current = true;
+    }
+  }, []);
 
   // Build financial snapshot for AI context
   const financialSnapshot = useMemo((): FinancialSnapshot => {
@@ -180,6 +191,9 @@ const Chat = () => {
       if (!isAIConfigured()) {
         // Fallback response when AI is not configured
         const localReply = buildLocalReply(trimmedInput);
+        toast.warning("AI unavailable", {
+          description: "Responded with local financial guidance.",
+        });
         setMessages(prev => prev.map(m => 
           m.id === loadingId ? {
             ...m,
@@ -200,6 +214,11 @@ const Chat = () => {
     } catch (error) {
       console.error('AI Error:', error);
       const localReply = buildLocalReply(trimmedInput);
+      const errorMessage = error instanceof Error ? error.message : "Request failed";
+      const isTimeout = errorMessage.toLowerCase().includes("timed out");
+      toast.warning(isTimeout ? "AI response timed out" : "AI request failed", {
+        description: "Showing local guidance instead.",
+      });
       setMessages(prev => prev.map(m => 
         m.id === loadingId ? {
           ...m,

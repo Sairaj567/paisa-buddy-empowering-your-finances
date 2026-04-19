@@ -26,6 +26,7 @@ import {
   Save,
   Mail,
   Calendar,
+  MessageSquare,
 } from "lucide-react";
 
 const DEFAULT_SETTINGS: UserSettings = {
@@ -35,6 +36,8 @@ const DEFAULT_SETTINGS: UserSettings = {
   notifications: true,
   weeklyReport: false,
   budgetAlerts: true,
+  discordOverspendingAlerts: false,
+  discordWebhookUrl: "",
 };
 
 const CURRENCY_OPTIONS = [
@@ -49,6 +52,8 @@ const DATE_FORMAT_OPTIONS = [
   { value: "MM/DD/YYYY", label: "MM/DD/YYYY (12/31/2024)" },
   { value: "YYYY-MM-DD", label: "YYYY-MM-DD (2024-12-31)" },
 ];
+
+const DISCORD_WEBHOOK_REGEX = /^https:\/\/discord(?:app)?\.com\/api\/webhooks\/.+/i;
 
 const Settings = () => {
   const { user, updateProfile } = useAuth();
@@ -74,6 +79,21 @@ const Settings = () => {
     setIsSaving(true);
 
     try {
+      if (settings.discordOverspendingAlerts) {
+        const webhook = settings.discordWebhookUrl.trim();
+        if (!webhook) {
+          toast.error("Enter your Discord webhook URL to enable Discord alerts.");
+          setIsSaving(false);
+          return;
+        }
+
+        if (!DISCORD_WEBHOOK_REGEX.test(webhook)) {
+          toast.error("Please enter a valid Discord webhook URL.");
+          setIsSaving(false);
+          return;
+        }
+      }
+
       localStorage.setItem(settingsKey, JSON.stringify(settings));
 
       // Update user name if changed
@@ -89,6 +109,50 @@ const Settings = () => {
       toast.success("Settings saved successfully!");
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleTestDiscordAlert = async () => {
+    const webhook = settings.discordWebhookUrl.trim();
+
+    if (!webhook) {
+      toast.error("Add your Discord webhook URL first.");
+      return;
+    }
+
+    if (!DISCORD_WEBHOOK_REGEX.test(webhook)) {
+      toast.error("Please enter a valid Discord webhook URL.");
+      return;
+    }
+
+    const content = [
+      "🧪 Paisa Buddy Test Alert",
+      "This is a test notification for Discord overspending alerts.",
+      "Category: Food & Dining",
+      "Spent: ₹12,400",
+      "Limit: ₹10,000",
+      "Usage: 124%",
+      `User: ${user?.email || "guest"}`,
+      `Time: ${new Date().toLocaleString("en-IN")}`,
+    ].join("\n");
+
+    try {
+      const response = await fetch(webhook, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ content }),
+      });
+
+      if (!response.ok) {
+        toast.error("Discord test failed. Check webhook URL and permissions.");
+        return;
+      }
+
+      toast.success("Test alert sent to Discord.");
+    } catch {
+      toast.error("Could not send test alert. Check your network and try again.");
     }
   };
 
@@ -315,6 +379,49 @@ const Settings = () => {
                       setSettings((prev) => ({ ...prev, notifications: checked }))
                     }
                   />
+                </div>
+                <Separator />
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium">Discord Overspending Alerts</p>
+                      <p className="text-sm text-muted-foreground">
+                        Send a Discord message when a budget crosses 100%
+                      </p>
+                    </div>
+                    <Switch
+                      checked={settings.discordOverspendingAlerts}
+                      onCheckedChange={(checked) =>
+                        setSettings((prev) => ({ ...prev, discordOverspendingAlerts: checked }))
+                      }
+                    />
+                  </div>
+
+                  {settings.discordOverspendingAlerts && (
+                    <div className="space-y-2">
+                      <Label htmlFor="discordWebhook">Discord Webhook URL</Label>
+                      <div className="relative">
+                        <MessageSquare className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+                        <Input
+                          id="discordWebhook"
+                          value={settings.discordWebhookUrl}
+                          onChange={(e) =>
+                            setSettings((prev) => ({ ...prev, discordWebhookUrl: e.target.value }))
+                          }
+                          placeholder="https://discord.com/api/webhooks/..."
+                          className="pl-10"
+                        />
+                      </div>
+                      <div className="flex justify-end">
+                        <Button variant="outline" size="sm" onClick={handleTestDiscordAlert}>
+                          Test Discord Alert
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Tip: Create a channel webhook in Discord and paste it here.
+                      </p>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>

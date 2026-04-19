@@ -6,7 +6,7 @@ import { useTransactions } from "@/hooks/useTransactions";
 import { useGoals } from "@/hooks/useGoals";
 import { useBudgets } from "@/hooks/useBudgets";
 import { useRecurringTransactions } from "@/hooks/useRecurringTransactions";
-import { useBudgetAlerts } from "@/hooks/useBudgetAlerts";
+import { useAuth } from "@/context/AuthContext";
 import RecurringTransactions from "@/components/dashboard/RecurringTransactions";
 import { Link } from "react-router-dom";
 import {
@@ -37,6 +37,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { parseFlexibleDate } from "@/lib/date";
+import type { UserSettings } from "@/types";
 
 type DateRange = "1W" | "1M" | "3M" | "6M" | "1Y" | "5Y" | "ALL";
 
@@ -71,11 +72,51 @@ const getDateRangeStart = (range: DateRange): Date | null => {
 };
 
 const Dashboard = () => {
+  const { user } = useAuth();
   const { transactions, isLoading: transactionsLoading } = useTransactions();
   const { goals, isLoading: goalsLoading } = useGoals();
   const { budgets } = useBudgets();
   const { patterns, monthlyRecurringTotal, upcomingThisWeek } = useRecurringTransactions(transactions);
-  const { exceededBudgets, warningBudgets } = useBudgetAlerts(budgets);
+
+  const settingsKey = user ? `pb-settings-${user.email}` : "pb-settings-guest";
+  const savedSettings = useMemo(() => {
+    const raw = localStorage.getItem(settingsKey);
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw) as Partial<UserSettings>;
+    } catch {
+      return null;
+    }
+  }, [settingsKey]);
+
+  const budgetAlertsEnabled = savedSettings?.budgetAlerts ?? true;
+  const { exceededBudgets, warningBudgets } = useMemo(() => {
+    if (!budgetAlertsEnabled) {
+      return { exceededBudgets: [], warningBudgets: [] };
+    }
+
+    const alerts = budgets
+      .filter((b) => b.limit > 0)
+      .map((b) => {
+        const percentUsed = Math.round((b.spent / b.limit) * 100);
+        if (percentUsed >= 100) {
+          return { category: b.category, percentUsed, type: "exceeded" as const };
+        }
+        if (percentUsed >= 90) {
+          return { category: b.category, percentUsed, type: "critical" as const };
+        }
+        if (percentUsed >= 80) {
+          return { category: b.category, percentUsed, type: "warning" as const };
+        }
+        return null;
+      })
+      .filter((a): a is { category: string; percentUsed: number; type: "exceeded" | "critical" | "warning" } => a !== null);
+
+    return {
+      exceededBudgets: alerts.filter((a) => a.type === "exceeded"),
+      warningBudgets: alerts.filter((a) => a.type === "warning" || a.type === "critical"),
+    };
+  }, [budgets, budgetAlertsEnabled]);
   
   const [dateRange, setDateRange] = useState<DateRange>("1M");
   const isLoading = transactionsLoading || goalsLoading;
