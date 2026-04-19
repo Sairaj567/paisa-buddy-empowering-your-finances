@@ -41,6 +41,59 @@ const Chat = () => {
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const nextMessageIdRef = useRef(2);
+
+  const getNextMessageId = () => {
+    const id = nextMessageIdRef.current;
+    nextMessageIdRef.current += 1;
+    return id;
+  };
+
+  const withTimeout = async <T,>(promise: Promise<T>, timeoutMs = 20000): Promise<T> => {
+    let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutHandle = setTimeout(() => {
+        reject(new Error("AI request timed out"));
+      }, timeoutMs);
+    });
+
+    try {
+      return await Promise.race([promise, timeoutPromise]);
+    } finally {
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
+    }
+  };
+
+  const buildLocalReply = (question: string) => {
+    const q = question.toLowerCase();
+    const summary = [
+      `Income: ₹${totals.income.toLocaleString('en-IN')}`,
+      `Expenses: ₹${totals.expenses.toLocaleString('en-IN')}`,
+      `Savings Rate: ${totals.savingsRate}%`,
+    ].join(" | ");
+
+    if (q.includes("save") || q.includes("savings")) {
+      return `Based on your current data, your savings rate is ${totals.savingsRate}%. Try automating a fixed transfer right after income credit and reducing your top expense category first.\n\n${summary}`;
+    }
+
+    if (q.includes("budget") || q.includes("spend") || q.includes("expense")) {
+      const topBudget = [...budgets].sort((a, b) => b.spent - a.spent)[0];
+      const budgetLine = topBudget
+        ? `Top spend bucket: ${topBudget.category} (₹${topBudget.spent.toLocaleString('en-IN')} of ₹${topBudget.limit.toLocaleString('en-IN')}).`
+        : "No active budget categories found yet.";
+      return `${budgetLine} Prioritize trimming variable expenses this week and track daily for better control.\n\n${summary}`;
+    }
+
+    if (q.includes("goal") || q.includes("target")) {
+      const activeGoals = goals.filter((g) => g.current < g.target);
+      return `You have ${activeGoals.length} active goals. A simple approach is to split monthly surplus across your top 1-2 goals instead of spreading too thin.\n\n${summary}`;
+    }
+
+    return `I received your question: "${question}". AI is currently unavailable, but I can still help with your finances using local analysis. Ask about savings, budgets, spending, or goals for specific suggestions.\n\n${summary}`;
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -100,46 +153,42 @@ const Chat = () => {
 
   const handleSend = async () => {
     if (!input.trim() || isTyping) return;
+    const trimmedInput = input.trim();
+    const userMessageId = getNextMessageId();
+    const loadingId = getNextMessageId();
     
     const userMessage: Message = {
-      id: messages.length + 1,
+      id: userMessageId,
       role: "user",
-      content: input,
+      content: trimmedInput,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
-    
-    setMessages(prev => [...prev, userMessage]);
-    setInput("");
-    setIsTyping(true);
 
-    // Add loading message
-    const loadingId = messages.length + 2;
-    setMessages(prev => [...prev, {
+    const loadingMessage: Message = {
       id: loadingId,
       role: "assistant",
       content: "Thinking...",
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       isLoading: true,
-    }]);
+    };
+    
+    setMessages((prev) => [...prev, userMessage, loadingMessage]);
+    setInput("");
+    setIsTyping(true);
 
     try {
       if (!isAIConfigured()) {
         // Fallback response when AI is not configured
+        const localReply = buildLocalReply(trimmedInput);
         setMessages(prev => prev.map(m => 
           m.id === loadingId ? {
             ...m,
-            content: "🔧 AI is not configured yet. Add your `VITE_OPENROUTER_API_KEY` to the `.env` file to enable intelligent responses.\n\nIn the meantime, here's what I can tell you:\n\n" + 
-              `📊 **Your Financial Summary:**\n` +
-              `• Income: ₹${totals.income.toLocaleString('en-IN')}\n` +
-              `• Expenses: ₹${totals.expenses.toLocaleString('en-IN')}\n` +
-              `• Savings Rate: ${totals.savingsRate}%\n` +
-              `• Active Goals: ${goals.length}\n` +
-              `• Budget Categories: ${budgets.length}`,
+            content: localReply,
             isLoading: false,
           } : m
         ));
       } else {
-        const response = await askFinancialQuestion(input, financialSnapshot);
+        const response = await withTimeout(askFinancialQuestion(trimmedInput, financialSnapshot));
         setMessages(prev => prev.map(m => 
           m.id === loadingId ? {
             ...m,
@@ -150,12 +199,13 @@ const Chat = () => {
       }
     } catch (error) {
       console.error('AI Error:', error);
+      const localReply = buildLocalReply(trimmedInput);
       setMessages(prev => prev.map(m => 
         m.id === loadingId ? {
           ...m,
-          content: "Sorry, I encountered an error. Please try again.",
+          content: localReply,
           isLoading: false,
-          isError: true,
+          isError: false,
         } : m
       ));
     } finally {
