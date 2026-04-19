@@ -19,7 +19,7 @@ const Navbar = () => {
     { href: "/goals", label: "Goals", icon: Target },
     { href: "/insights", label: "AI Insights", icon: TrendingUp },
     { href: "/learn", label: "Learn", icon: BookOpen },
-    { href: "/chat", label: "Consult", icon: MessageCircle },
+    { href: "/consult", label: "Consult", icon: MessageCircle },
   ];
 
   const isActive = (path: string) => location.pathname === path;

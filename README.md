@@ -15,8 +15,6 @@ The platform acts as a **personal finance buddy**, offering proactive insights, 
 
 * **Automatic Transaction Tracking**
 
-  * OCR-based bill and document scanning
-  * SMS-based transaction detection
   * Auto-categorization into Needs, Essentials, and Wants
 
 * **Smart Financial Insights**
